@@ -141,6 +141,7 @@ class Model():
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 
+    #OPTIMIZE THE NETWORK BY SAMPLING FROM THE REPLAY BUFFER
     def optimize(self):
         if len(self.memory) < self.BATCH_SIZE: return
 
@@ -158,7 +159,7 @@ class Model():
         nextstate_values = torch.zeros(self.BATCH_SIZE,device=self.device)
         nextstate_values[non_final_mask] = self.vnet(non_final_next_states).max(1)[0].detach()
 
-        expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
+        expected_state_action_values = (nextstate_values * self.GAMMA) + reward_batch
 
         loss = l2(state_action_values,expected_state_action_values.unsqueeze(1))
 
@@ -200,6 +201,8 @@ class Model():
 
         IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
         EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+
+        print(EYE,IOU,EYE * IOU)
 
         if EYE * IOU > 0.1:
             print("EYE: %.4f    IOU:%.4f" % (EYE,IOU))

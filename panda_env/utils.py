@@ -30,7 +30,7 @@ class LM_Detector():
         self.thresh = 0.4
 
     #DLIB SIMPLE LANDMARK DETECTION + CPU YOLO FACE DETECTION
-    def get_lm(self,rgb):
+    def get_lm(self,rgb,pad=20):
         h,w = rgb.shape[:2]
         blob = cv2.dnn.blobFromImage(cv2.resize(rgb,(300,300)),1.0,(300,300),(103.93,116.77,123.68))
         self.fa.setInput(blob)
@@ -52,13 +52,13 @@ class LM_Detector():
         #quit()
         if rightmost == -1: return
         lm = face_utils.shape_to_np(self.predictor5(rgb,bbox))
-        #lm[:,0] - bbox[0]
-        #lm[:,1] - bbox[1]
-        #rgb = rgb[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-        return lm
+        lm[:,0] = lm[:,0] - bbox.left()
+        lm[:,1] = lm[:,1] - bbox.top()
+        rgb = rgb[bbox.top():bbox.bottom(),bbox.left():bbox.right()]
+        return rgb,lm
 
     #GET THE EYE REGION
-    def get_eyes(self,rgb,lm):
+    def get_eyes(self,rgb,lm,pad=40):
         vec1 = lm[0] - lm[2]
         x = -vec1[1] / vec1[0]
         y = vec1[0] * x / -vec1[1]
@@ -68,7 +68,7 @@ class LM_Detector():
         h = 50
         cx = (lm[0][0] + lm[2][0]) // 2
         cy = (lm[0][1] + lm[2][1]) // 2
-        rot_rect = ((cx,cy),(w+50,h),angle)     #PADDED HEIGHT AND WIDTH OF 15PIXELS
+        rot_rect = ((cx,cy),(w+pad,h),angle)     #PADDED HEIGHT AND WIDTH OF 15PIXELS
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
 

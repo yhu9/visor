@@ -45,7 +45,7 @@ class World(DirectObject):
 
     def __init__(self):
         # Preliminary capabilities check.
-
+        print()
         if not base.win.getGsg().getSupportsBasicShaders():
             self.t = addTitle(
                 "Shadow Demo: Video driver reports that shaders are not supported.")
@@ -79,7 +79,13 @@ class World(DirectObject):
         self.addControls()
 
         #define our policy network
-        self.net = Model()
+        self.net = Model(load=True)
+
+    def reset(self):
+        self.cameraSelection = 0
+        self.incrementCameraPosition(0)
+        self.putSunOnFace()
+        self.visorparam = [17,7,10,8,0]      #x,y,w,h,r
 
     #SOME CONTROL SEQUENCES
     def addControls(self):
@@ -164,6 +170,7 @@ class World(DirectObject):
         self.visorparam = [17,7,10,8,0]      #x,y,w,h,r
         self.light.node().hideFrustum()
 
+
     #GET THE CURRENT FRAME AS NUMPY ARRAY
     def getFrame(self):
         #APPLY VISOR MASK
@@ -183,7 +190,14 @@ class World(DirectObject):
         img = np.array(v,dtype=np.uint8)
         img = img.reshape((tex.getYSize(),tex.getXSize(),4))
         img = img[:,:,:3]
-        return img[::-1] / 255.0
+        img = img[::-1]
+        img, lm = self.net.lmfunc.get_lm(img)
+        h,w = img.shape[:2]
+        img = cv2.resize(img,(112,224))
+        lm[:,0] = lm[:,0] * (112 / w)
+        lm[:,1] = lm[:,1] * (224 / h)
+
+        return lm, img / 255.0
 
     #get state
     def getstate(self,prv_frame,cur_frame):
@@ -201,21 +215,26 @@ class World(DirectObject):
     #TRAIN THE VISOR
     def trainVisor(self,task):
 
-        for i in range(self.net.EPISODES):
+        max_reward = 0.0
+        for i in count():
+            self.reset()
             #GET THE CURRENT FRAME AS A NUMPY ARRAY
-            cur_frame = self.getFrame()
-            prv_frame = self.getFrame()
+            cur_lm, cur_frame = self.getFrame()
+            prv_lm, prv_frame = self.getFrame()
             state = self.getstate(prv_frame,cur_frame)
 
+            accum_reward = 0.0
             for t in count():
+                self.incLightPos(t)
                 #take one step in the environment using the action
                 action = self.net.select_action(state)
                 self.takeaction(action.item())
-                reward,done = self.net.genReward(cur_frame)
+                reward,done = self.net.genReward(self.visorparam,cur_frame,cur_lm)
+                accum_reward += reward
 
                 #get new state
-                prv_frame = cur_frame.copy()
-                cur_frame = self.getFrame()
+                prv_lm, prv_frame = cur_lm.copy(),cur_frame.copy()
+                cur_lm, cur_frame = self.getFrame()
                 next_state = self.getstate(prv_frame,cur_frame)
 
                 #store transition into memory (s,a,s_t+1,r)
@@ -223,19 +242,24 @@ class World(DirectObject):
                 state = next_state
 
                 #optimize the network using memory
-                self.net.optimize()
+                loss = self.net.optimize()
 
-                #display the visor
+                #display the visor and show some data
                 cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
                 cv2.waitKey(10)
+                sys.stdout.write("episode: %i | loss: %.5f |  R_step: %.5f |    R_accum: %.5f | R_max: %.5f \n" %(i,loss,reward.item(),accum_reward,max_reward))
 
                 #stopping condition
                 if done or (t == 10 and len(self.net.memory) > self.net.BATCH_SIZE):
+                    if accum_reward > max_reward:
+                        max_reward = accum_reward
+                    print('reset')
                     break
 
             #update the value network
             if i % self.net.TARGET_UPDATE == 0:
                 self.net.vnet.load_state_dict(self.net.pnet.state_dict())
+                self.net.save()
 
         return task.again
 
@@ -284,6 +308,12 @@ class World(DirectObject):
         self.light.lookAt(0,0,0)
 
         return task.cont
+
+    def incLightPos(self,n):
+        angleDegrees = (n * 2 - 90)
+        angleRadians = angleDegrees * (pi / 180.0)
+        self.light.setPos(20.0 * sin(angleRadians),20.0 * cos(angleRadians),10)
+        self.light.lookAt(0,0,0)
 
     def toggleVisor(self,n):
         self.visorMode = (self.visorMode + n) % 2

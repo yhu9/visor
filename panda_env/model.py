@@ -1,6 +1,7 @@
 import itertools
 import math
 import random
+import os
 from collections import namedtuple
 
 import numpy as np
@@ -12,6 +13,7 @@ import resnet
 import matplotlib.pyplot as plt
 
 import cv2
+import sys
 
 from utils import ShadowDetector
 from utils import LM_Detector
@@ -114,13 +116,13 @@ class Model():
                 torch.nn.init.xavier_uniform(m.weight.data)
 
         #DEFINE ALL NETWORK PARAMS
-        self.EPISODES = 50
-        self.BATCH_SIZE = 128
+        self.EPISODES = 0
+        self.BATCH_SIZE = 10
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 200
-        self.TARGET_UPDATE = 2
+        self.TARGET_UPDATE = 4
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000)
@@ -132,9 +134,12 @@ class Model():
         #OUR NETWORK
         self.pnet = DQN()
         self.vnet = DQN()
-        self.pnet.apply(init_weights)
-        self.vnet.apply(init_weights)
-        if load: self.net.load_state_dict(torch.load("model/DQN.pth"))
+        if load:
+            self.pnet.load_state_dict(torch.load("model/DQN.pth"));
+            self.vnet.load_state_dict(torch.load("model/DQN.pth"));
+        else:
+            self.pnet.apply(init_weights)
+            self.vnet.apply(init_weights)
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
         self.opt = torch.optim.Adam(itertools.chain(self.pnet.parameters()),lr=0.00001,betas=(0.0,0.9))
@@ -143,7 +148,7 @@ class Model():
 
     #OPTIMIZE THE NETWORK BY SAMPLING FROM THE REPLAY BUFFER
     def optimize(self):
-        if len(self.memory) < self.BATCH_SIZE: return
+        if len(self.memory) < self.BATCH_SIZE: return 0.0
 
         transitions = self.memory.sample(self.BATCH_SIZE)
         batch = Transition(*zip(*transitions))
@@ -161,13 +166,15 @@ class Model():
 
         expected_state_action_values = (nextstate_values * self.GAMMA) + reward_batch
 
-        loss = l2(state_action_values,expected_state_action_values.unsqueeze(1))
+        loss = self.l2(state_action_values,expected_state_action_values.unsqueeze(1))
 
         self.opt.zero_grad()
         loss.backward()
         for param in self.pnet.parameters():
             param.grad.data.clamp_(-1,1)
         self.opt.step()
+
+        return loss
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
@@ -192,9 +199,8 @@ class Model():
         return actions
 
     #REWARD MAP GENERATION GIVEN STATE S
-    def genReward(self,rgb,draw=False):
+    def genReward(self,params,rgb,lm,draw=False):
         rgb = (rgb * 255).astype(np.uint8)
-        lm = self.lmfunc.get_lm(rgb)
         eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
         #self.lmfunc.view_lm(rgb,lm)                #for visualization
         shadow = self.shadowfunc.get_shadow(rgb)
@@ -202,37 +208,28 @@ class Model():
         IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
         EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
 
-        print(EYE,IOU,EYE * IOU)
-
-        if EYE * IOU > 0.1:
+        #525 = 15 * 35 which is the area of the visor roughly
+        #params are the visor parameters (x,y,w,h,theta)
+        A = (params[2] * params[3]) / 400.0
+        threshold = EYE * (EYE + IOU)
+        if threshold > 1.0:
             print("EYE: %.4f    IOU:%.4f" % (EYE,IOU))
-            plt.plot(rgb)
-            plt.show()
-            return torch.Tensor([1]), True
+            self.testReward(rgb,lm)
+            return torch.Tensor([threshold - A]), False
+        return torch.Tensor([-0.2]), False
 
-        return torch.Tensor([0]), False
-
-    def testReward(self,rgb):
-        lm = self.lmfunc.get_lm(rgb)
+    def testReward(self,rgb,lm):
         eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
         eye_mask = eye_mask.astype(np.bool)
         shadow = self.shadowfunc.get_shadow(rgb)
         rgb[eye_mask] = rgb[eye_mask] * [0,1,1]
         rgb[shadow] = rgb[shadow] * [1,0,0]
-        cv2.imshow('rgb',rgb)
+        cv2.imshow('successful mask',rgb)
         cv2.waitKey(10)
 
-    #BACKWARD PASS
-    def backward(self,pred,newstate):
-        reward = self.genReward(newstate)
-        self.opt.zero_grad()
-        loss = self.l2(pred,reward)
-        print(loss,pred,reward)
-        loss.backward(retain_graph=False)
-        self.opt.step()
-
     def save(self):
-        torch.save(self.net.state_dict(),'model/DQN.pth')
+        if not os.path.isdir('model'): os.mkdir('model')
+        torch.save(self.vnet.state_dict(),'model/DQN.pth')
 
 if __name__ == '__main__':
     #net = models.resnet14(pretrained=False,channels=6)

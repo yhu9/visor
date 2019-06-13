@@ -2,22 +2,22 @@ import itertools
 import math
 import random
 import os
+import sys
 from collections import namedtuple
 
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-#import torchvision.models as models
 import resnet
 import matplotlib.pyplot as plt
 
-import cv2
-import sys
-
 from utils import ShadowDetector
 from utils import LM_Detector
+from logger import Logger
 
+####################################################3
 
 #RESIDUAL BLOCKS
 class ResBlock(nn.Module):
@@ -115,6 +115,9 @@ class Model():
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
                 torch.nn.init.xavier_uniform(m.weight.data)
 
+        #LOGGER FOR VISUALIZATION
+        self.logger = Logger('./logs')
+
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 10
@@ -122,7 +125,7 @@ class Model():
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 200
-        self.TARGET_UPDATE = 4
+        self.TARGET_UPDATE = 5
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000)
@@ -134,9 +137,11 @@ class Model():
         #OUR NETWORK
         self.pnet = DQN()
         self.vnet = DQN()
+
+        #LOAD THE MODULES
         if load:
-            self.pnet.load_state_dict(torch.load("model/DQN.pth"));
-            self.vnet.load_state_dict(torch.load("model/DQN.pth"));
+            self.pnet.load_state_dict(torch.load(load));
+            self.vnet.load_state_dict(torch.load(load));
         else:
             self.pnet.apply(init_weights)
             self.vnet.apply(init_weights)
@@ -148,6 +153,7 @@ class Model():
 
     #OPTIMIZE THE NETWORK BY SAMPLING FROM THE REPLAY BUFFER
     def optimize(self):
+
         if len(self.memory) < self.BATCH_SIZE: return 0.0
 
         transitions = self.memory.sample(self.BATCH_SIZE)
@@ -210,26 +216,49 @@ class Model():
 
         #525 = 15 * 35 which is the area of the visor roughly
         #params are the visor parameters (x,y,w,h,theta)
-        A = (params[2] * params[3]) / 400.0
-        threshold = EYE * (EYE + IOU)
-        if threshold > 1.0:
-            print("EYE: %.4f    IOU:%.4f" % (EYE,IOU))
-            self.testReward(rgb,lm)
-            return torch.Tensor([threshold - A]), False
-        return torch.Tensor([-0.2]), False
+        A = (params[2] * params[3]) / np.sum(eye_mask)
+        threshold = EYE + IOU
 
-    def testReward(self,rgb,lm):
-        eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
-        eye_mask = eye_mask.astype(np.bool)
-        shadow = self.shadowfunc.get_shadow(rgb)
-        rgb[eye_mask] = rgb[eye_mask] * [0,1,1]
+        #reward
+        if threshold > 1.2:
+            reward,flag = torch.Tensor([threshold - A]), True
+        else:
+            reward,flag = torch.Tensor([-0.20]), False
+
+        #DRAW THE SEMANTIC MASKS "OPTIONAL"
+        self.drawReward(params,eye_mask,shadow,rgb.copy(),lm,IOU,EYE,A,reward)
+
+        return reward,flag
+
+    def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,A,reward):
+
+        h,w,d = rgb.shape
+        img = np.zeros((h,w+100,d))
+
+        rgb[eye_mask] = rgb[eye_mask] * [0,0,1]
         rgb[shadow] = rgb[shadow] * [1,0,0]
-        cv2.imshow('successful mask',rgb)
+
+        A = (params[2] * params[3]) / 300.0
+        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
+        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+
+        #show landmarks
+        for x,y in lm:
+            cv2.circle(rgb,(x,y),2,(255,0,255),-1)
+
+        #IMG IS 224 X 112
+        cv2.putText(img,"IOU %.3f" % IOU,(2,150),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"EYE %.3f" % EYE,(2,170),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"A %.3f" % A,(2,190),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"reward %.3f" % reward ,(2,210),2,0.4,(0,255,0),1,cv2.LINE_AA)
+
+        img[:,100:,:] = rgb
+        cv2.imshow('semantic mask',img)
         cv2.waitKey(10)
 
     def save(self):
         if not os.path.isdir('model'): os.mkdir('model')
-        torch.save(self.vnet.state_dict(),'model/DQN.pth')
+        torch.save(self.pnet.state_dict(),'model/DQN.pth')
 
 if __name__ == '__main__':
     #net = models.resnet14(pretrained=False,channels=6)

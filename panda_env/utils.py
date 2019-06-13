@@ -75,7 +75,7 @@ class LM_Detector():
         eye_mask = np.zeros(rgb.shape[:2])
         cv2.fillConvexPoly(eye_mask,box,(1))
 
-        return eye_mask
+        return eye_mask == 1
 
     #FOR VISUALIZATION
     def view_lm(self,rgb,lm):

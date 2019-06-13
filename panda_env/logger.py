@@ -1,4 +1,6 @@
 # Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
+import os
+
 import tensorflow as tf
 import numpy as np
 import scipy.misc
@@ -12,7 +14,14 @@ class Logger(object):
 
     def __init__(self, log_dir):
         """Create a summary writer logging to log_dir."""
-        self.writer = tf.summary.FileWriter(log_dir)
+        log_dir = os.path.join('log',log_dir)
+        for i in range(5):
+            final = log_dir + str(i)
+            if not os.path.exists(final):
+                self.writer = tf.summary.FileWriter(final)
+                break
+
+        print('all sessions full. please delete one of the logs')
 
     def scalar_summary(self, data, step):
         """Log a scalar variable."""

@@ -283,6 +283,7 @@ class World(DirectObject):
         self.net.EPS_START = self.net.EPS_END
         for i in range(20): #go for 20 episodes
             self.reset()
+
             #GET THE CURRENT FRAME AS A NUMPY ARRAY
             cur_lm, cur_frame = self.getFrame()
             prv_lm, prv_frame = self.getFrame()
@@ -305,10 +306,10 @@ class World(DirectObject):
                     next_state = self.getstate(prv_frame,cur_frame)
                 else:
                     next_state = None
-
                 state = next_state
 
                 #display the visor and show some data
+                self.visormask = self.visormask[::-1]
                 cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
                 cv2.waitKey(10)
                 sys.stdout.write("episode: %i | R_step: %.5f |    R_accum: %.5f | R_max: %.5f \r" %(i,reward.item(),accum_reward,max_reward))
@@ -328,7 +329,7 @@ class World(DirectObject):
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
-    def takeaction(self,actionid,speed=2):
+    def takeaction(self,actionid,speed=1):
         if actionid == 0:   #inc x up
             self.visorparam[0] += speed
         if actionid == 1:   #inc y up

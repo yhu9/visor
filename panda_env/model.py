@@ -159,18 +159,23 @@ class Model():
         transitions = self.memory.sample(self.BATCH_SIZE)
         batch = Transition(*zip(*transitions))
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)),device=self.device,dtype=torch.uint8)
-        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+        next_states = [s for s in batch.next_state if s is not None]
 
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
-        state_action_values = self.pnet(state_batch).gather(1,action_batch)
+        if len(next_states) == 0:
+            state_action_values = self.pnet(state_batch).gather(1,action_batch)
+            expected_state_action_values = reward_batch
 
-        nextstate_values = torch.zeros(self.BATCH_SIZE,device=self.device)
-        nextstate_values[non_final_mask] = self.vnet(non_final_next_states).max(1)[0].detach()
+        else:
+            state_action_values = self.pnet(state_batch).gather(1,action_batch)
 
-        expected_state_action_values = (nextstate_values * self.GAMMA) + reward_batch
+            non_final_next_states = torch.cat(next_states)
+            nextstate_values = torch.zeros(self.BATCH_SIZE,device=self.device)
+            nextstate_values[non_final_mask] = self.vnet(non_final_next_states).max(1)[0].detach()
+            expected_state_action_values = (nextstate_values * self.GAMMA) + reward_batch
 
         loss = self.l2(state_action_values,expected_state_action_values.unsqueeze(1))
 

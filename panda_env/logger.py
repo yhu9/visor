@@ -19,9 +19,10 @@ class Logger(object):
             final = log_dir + str(i)
             if not os.path.exists(final):
                 self.writer = tf.summary.FileWriter(final)
-                break
+                return
 
         print('all sessions full. please delete one of the logs')
+        quit()
 
     def scalar_summary(self, data, step):
         """Log a scalar variable."""

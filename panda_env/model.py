@@ -47,7 +47,7 @@ class ResBlock(nn.Module):
 
 ##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
-Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
+Transition = namedtuple('Transition',('state', 'action1','action2','action3', 'next_state', 'reward'))
 
 class ReplayMemory(object):
 
@@ -80,13 +80,23 @@ class DQN(nn.Module):
         self.res18 = resnet.resnet18()
         self.m1 = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1000,10)
+                nn.Linear(1000,5)
+                )
+        self.m2 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,5)
+                )
+        self.m3 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,3)
                 )
 
     def forward(self,x):
         x = self.res18(x)
-        out = self.m1(x)
-        return out
+        out1 = self.m1(x)
+        out2 = self.m2(x)
+        out3 = self.m3(x)
+        return out1,out2,out3
 
 #ACTION NET WITH FULL ACTION SPACE
 class anet2(nn.Module):
@@ -124,7 +134,7 @@ class Model():
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
-        self.EPS_DECAY = 200
+        self.EPS_DECAY = 400
         self.TARGET_UPDATE = 5
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
@@ -162,22 +172,35 @@ class Model():
         next_states = [s for s in batch.next_state if s is not None]
 
         state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
+        action_batch1 = torch.cat(batch.action1)
+        action_batch2 = torch.cat(batch.action2)
+        action_batch3 = torch.cat(batch.action3)
         reward_batch = torch.cat(batch.reward)
 
+        #get old Q values and new Q values for belmont eq
+        a1,a2,a3 = self.pnet(state_batch)
+        state_action_values1 = a1.gather(1,action_batch1)
+        state_action_values2 = a2.gather(1,action_batch2)
+        state_action_values3 = a3.gather(1,action_batch3)
         if len(next_states) == 0:
-            state_action_values = self.pnet(state_batch).gather(1,action_batch)
-            expected_state_action_values = reward_batch
-
+            expected_state_action_values1 = reward_batch
+            expected_state_action_values2 = reward_batch
+            expected_state_action_values3 = reward_batch
         else:
-            state_action_values = self.pnet(state_batch).gather(1,action_batch)
-
             non_final_next_states = torch.cat(next_states)
-            nextstate_values = torch.zeros(self.BATCH_SIZE,device=self.device)
-            nextstate_values[non_final_mask] = self.vnet(non_final_next_states).max(1)[0].detach()
-            expected_state_action_values = (nextstate_values * self.GAMMA) + reward_batch
+            nextstate_values1 = torch.zeros(self.BATCH_SIZE,device=self.device)
+            nextstate_values2 = torch.zeros(self.BATCH_SIZE,device=self.device)
+            nextstate_values3 = torch.zeros(self.BATCH_SIZE,device=self.device)
+            v1,v2,v3 = self.vnet(non_final_next_states)
+            nextstate_values1[non_final_mask] = v1.max(1)[0].detach()
+            nextstate_values2[non_final_mask] = v2.max(1)[0].detach()
+            nextstate_values3[non_final_mask] = v3.max(1)[0].detach()
+            expected_state_action_values1 = (nextstate_values1 * self.GAMMA) + reward_batch
+            expected_state_action_values2 = (nextstate_values2 * self.GAMMA) + reward_batch
+            expected_state_action_values3 = (nextstate_values3 * self.GAMMA) + reward_batch
 
-        loss = self.l2(state_action_values,expected_state_action_values.unsqueeze(1))
+        #LOSS IS l2 loss of belmont equation
+        loss = self.l2(state_action_values1,expected_state_action_values1.unsqueeze(1)) + self.l2(state_action_values2,expected_state_action_values2.unsqueeze(1)) + self.l2(state_action_values3,expected_state_action_values3.unsqueeze(1))
 
         self.opt.zero_grad()
         loss.backward()
@@ -196,9 +219,11 @@ class Model():
         if sample > eps_threshold:
             with torch.no_grad():
                 #send the state through the DQN and get the index with the highest value for that state
-                return self.pnet(state).max(1)[1].view(1,1)
+                a1,a2,a3 = self.pnet(state)
+
+                return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
         else:
-            return torch.tensor([[random.randrange(10)]],device=self.device,dtype=torch.long)
+            return torch.tensor([[random.randrange(5)]],device=self.device,dtype=torch.long), torch.tensor([[random.randrange(5)]],device=self.device,dtype=torch.long),torch.tensor([[random.randrange(3)]],device=self.device,dtype=torch.long)
 
     #FORWARD PASS
     def forward(self,rgb):

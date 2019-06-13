@@ -1,19 +1,17 @@
+
 #!/usr/bin/env python
 
 from itertools import count
 import sys
-import os
 from math import pi, sin, cos,sqrt
 from random import *
 import numpy as np
-import argparse
 
 #CUSTOM MODULES
-from model import Model
+#from model import Model
 
 #OTHER LIBRARIES
 import cv2
-import torch
 
 #PANDA3D
 from panda3d.core import *
@@ -22,16 +20,10 @@ import direct.directbase.DirectStart
 #from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
-#from direct.actor import Actor
+from direct.actor import Actor
 from direct.filter.FilterManager import FilterManager
 
 from panda3d.direct import throw_new_frame
-################################################################################################
-parser = argparse.ArgumentParser()
-parser.add_argument('--load', type=str, default=False,help='model to load')
-parser.add_argument('--test', action='store_const',const=True,default=False,help='testing flag')
-
-opt = parser.parse_args()
 ################################################################################################
 
 # Function to put instructions on the screen.
@@ -45,6 +37,9 @@ def addTitle(text):
     return OnscreenText(text=text, style=1, fg=(1, 1, 1, 1), scale=.07,
                         parent=base.a2dBottomRight, align=TextNode.ARight,
                         pos=(-0.1, 0.09), shadow=(0, 0, 0, 1))
+
+
+
 
 class World(DirectObject):
 
@@ -77,16 +72,16 @@ class World(DirectObject):
         #2. VISOR CONTROLLER
         #taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
         #taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
-        if not opt.test:
-            taskMgr.doMethodLater(0.2,self.trainVisor,'training control')
-        else:
-            taskMgr.doMethodLater(0.2,self.testVisor,'testing control')
+        #if not opt.test:
+        #    taskMgr.doMethodLater(0.2,self.trainVisor,'training control')
+        #else:
+        #    taskMgr.doMethodLater(0.2,self.testVisor,'testing control')
 
         #add user controller
         self.addControls()
 
         #define our policy network
-        self.net = Model(load=opt.load)
+        #self.net = Model(load=opt.load)
 
     def reset(self):
         self.cameraSelection = 0
@@ -132,7 +127,6 @@ class World(DirectObject):
         self.accept("tab", base.bufferViewer.toggleEnable)
         self.accept("v", base.bufferViewer.toggleEnable)
         self.accept("o", base.oobe)
-        self.accept("f1",self.showbuffer)
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
@@ -222,127 +216,6 @@ class World(DirectObject):
         lm[:,1] = lm[:,1] * (224 / h)
 
         return lm, img / 255.0
-
-    #get state
-    def getstate(self,prv_frame,cur_frame):
-        h,w = cur_frame.shape[:2]
-        d = 6
-        state = np.zeros((h,w,d))
-        state[:,:,:3] = prv_frame
-        state[:,:,3:] = cur_frame
-
-        state = torch.from_numpy(np.ascontiguousarray(state)).float()
-        state = state.permute(2,0,1)
-        state = state.unsqueeze(0)
-        return state
-
-    #TRAIN THE VISOR
-    def trainVisor(self,task):
-        max_reward = -10.0
-        for i in count():
-            self.reset()
-
-            #GET THE CURRENT FRAME AS A NUMPY ARRAY
-            cur_lm, cur_frame = self.getFrame()
-            prv_lm, prv_frame = self.getFrame()
-            state = self.getstate(prv_frame,cur_frame)
-
-            accum_reward = 0.0
-            for t in count():
-                #get the immediate reward for current state
-                reward,done = self.net.genReward(self.visorparam,cur_frame,cur_lm)
-                accum_reward += reward
-
-                #take one step in the environment using the action
-                a1,a2,a3 = self.net.select_action(state)
-                self.takeaction(a1.item(),a2.item(),a3.item())
-
-                #get new state
-                if not done:
-                    prv_lm, prv_frame = cur_lm.copy(),cur_frame.copy()
-                    cur_lm, cur_frame = self.getFrame()
-                    next_state = self.getstate(prv_frame,cur_frame)
-                else:
-                    next_state = None
-
-                #store transition into memory (s,a,s_t+1,r)
-                self.net.memory.push(state,a1,a2,a3,next_state,reward)
-                state = next_state
-
-                #optimize the network using memory
-                loss = self.net.optimize()
-
-                #display the visor and show some data
-                base.graphicsEngine.renderFrame()
-                cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-                cv2.waitKey(10)
-                sys.stdout.write("episode: %i | loss: %.5f |  R_step: %.5f |    R_accum: %.5f | R_max: %.5f \r" %(i,loss,reward.item(),accum_reward,max_reward))
-
-                #stopping condition
-                if done or (t == 20 and len(self.net.memory) > self.net.BATCH_SIZE):
-                    if accum_reward > max_reward:
-                        max_reward = accum_reward
-                        self.net.save()
-                    break
-
-            #LOG THE SUMMARIES
-            self.net.logger.scalar_summary({'max_reward': max_reward, 'ep_reward': accum_reward, 'loss': loss},i)
-
-            #update the value network
-            if i % self.net.TARGET_UPDATE == 0:
-                self.net.vnet.load_state_dict(self.net.pnet.state_dict())
-
-        return task.again
-
-    #TRAIN THE VISOR
-    def testVisor(self,task):
-        max_reward = 0.0
-        self.net.EPS_START = self.net.EPS_END
-        for i in range(20): #go for 20 episodes
-            self.reset()
-
-            #GET THE CURRENT FRAME AS A NUMPY ARRAY
-            cur_lm, cur_frame = self.getFrame()
-            prv_lm, prv_frame = self.getFrame()
-            state = self.getstate(prv_frame,cur_frame)
-
-            accum_reward = 0.0
-            for t in count():
-                #get the immediate reward for current state
-                reward,done = self.net.genReward(self.visorparam,cur_frame,cur_lm)
-                accum_reward += reward
-
-                #take one step in the environment using the action
-                action = self.net.select_action(state)
-                self.takeaction(action.item())
-
-                #get new state
-                if not done:
-                    prv_lm, prv_frame = cur_lm.copy(),cur_frame.copy()
-                    cur_lm, cur_frame = self.getFrame()
-                    next_state = self.getstate(prv_frame,cur_frame)
-                else:
-                    next_state = None
-                state = next_state
-
-                #display the visor and show some data
-                self.visormask = self.visormask[::-1]
-                cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-                cv2.waitKey(10)
-                sys.stdout.write("episode: %i | R_step: %.5f |    R_accum: %.5f | R_max: %.5f \r" %(i,reward.item(),accum_reward,max_reward))
-
-                #stopping condition
-                if done or t == 10:
-                    if accum_reward > max_reward:
-                        max_reward = accum_reward
-                    break
-
-            #update the value network
-            if i % self.net.TARGET_UPDATE == 0:
-                self.net.vnet.load_state_dict(self.net.pnet.state_dict())
-
-        return task.done
-
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
@@ -464,50 +337,6 @@ class World(DirectObject):
 
         return Task.again
 
-    def showbuffer(self):
-        base.graphicsEngine.renderFrame()
-        dr = base.camNode.getDisplayRegion(0)
-        tex = dr.getScreenshot()
-        data = tex.getRamImage()
-        v = memoryview(data).tolist()
-        img = np.array(v,dtype=np.uint8)
-        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
-        img = img[::-1]
-        #cv2.imshow('img',img)
-        #cv2.waitKey(0)
-
-        winprops = WindowProperties.size(512,512)
-        props = FrameBufferProperties()
-        props.setRgbColor(0)
-        props.setAlphaBits(0)
-        props.setDepthBits(1)
-        LBuffer = base.graphicsEngine.makeOutput(
-                base.pipe, "offscreen buffer", -2,
-                props, winprops,
-                GraphicsPipe.BFRefuseWindow,
-                base.win.getGsg(),base.win)
-
-        Ldepthmap = Texture()
-        LBuffer.addRenderTexture(Ldepthmap,GraphicsOutput.RTMBindOrCopy,GraphicsOutput.RTPDepth)
-        Ldepthmap.setWrapU(Texture.WMClamp)
-        Ldepthmap.setWrapV(Texture.WMClamp)
-
-        self.LCam = base.makeCamera(LBuffer)
-        self.LCam.node().setScene(render)
-        self.LCam.node().setLens(self.light.node().getLens())
-        self.LCam.reparentTo(self.light)
-
-        data = Ldepthmap.makeRamImage()
-        v = memoryview(data).tolist()
-        img = np.array(v,dtype=np.uint8)
-        img = img.reshape((Ldepthmap.getYSize(),Ldepthmap.getXSize(),1))
-        img = img[::-1]
-        cv2.imshow('img',img)
-        cv2.waitKey(0)
-        print(Ldepthmap.getRamImage())
-        print(GraphicsOutput.RTPDepth)
-        quit()
-
     def genVisor(self,w=35,h=15):
         visor = render.attach_new_node("visor")
         objects = [[None] * h for i in range(w)]
@@ -527,6 +356,4 @@ class World(DirectObject):
 
 w = World()
 base.run()
-
-
 

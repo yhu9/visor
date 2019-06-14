@@ -20,7 +20,7 @@ import direct.directbase.DirectStart
 #from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
-from direct.actor import Actor
+from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
 
 from panda3d.direct import throw_new_frame
@@ -37,9 +37,6 @@ def addTitle(text):
     return OnscreenText(text=text, style=1, fg=(1, 1, 1, 1), scale=.07,
                         parent=base.a2dBottomRight, align=TextNode.ARight,
                         pos=(-0.1, 0.09), shadow=(0, 0, 0, 1))
-
-
-
 
 class World(DirectObject):
 
@@ -83,10 +80,12 @@ class World(DirectObject):
         #define our policy network
         #self.net = Model(load=opt.load)
 
+    #RESET THE ENVIRONMENT
     def reset(self):
         self.cameraSelection = 0
         self.incrementCameraPosition(0)
         self.light_angle = 0.0
+        self.dennis.pose('head_movement',80)
         self.putSunOnFace()
         self.visorparam = [17,7,5,4,0]      #x,y,w,h,r
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])     #PADDED HEIGHT AND WIDTH OF 15PIXELS
@@ -143,11 +142,16 @@ class World(DirectObject):
                 nn.setPos((x - 6) * 4, (y - 6) * 4, 0)
         floor.setTexture(floorTex)
         floor.flattenStrong()
-        self.car = loader.loadModel('assets/my_model.egg')
+        self.car = loader.loadModel("assets/car.egg")
         self.car.reparentTo(render)
         self.car.setPos(0, 0, 0)
+        self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
+
+        self.dennis = Actor('assets/dennis.egg',{"head_movement": "assets/dennis-head_movement.egg"})
+        self.dennis.reparentTo(self.car)
+        self.dennis.setPlayRate(0.5,'head_movement')
+        self.dennis.loop("head_movement")
         #CURRENTLY SHADOW QUALITY IS REDUCED DUE TO SHADOW ACNE
-        #self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
 
         self.visor, self.hexes = self.genVisor()
         self.visor.reparentTo(self.car)

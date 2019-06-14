@@ -210,6 +210,13 @@ class Model():
 
         return loss
 
+
+    #GREEDY ACTION SELECTION
+    def select_greedy(self,state):
+        with torch.no_grad():
+            a1,a2,a3 = self.pnet(state)
+            return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
+
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
         sample = random.random()

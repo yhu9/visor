@@ -75,10 +75,11 @@ class World(DirectObject):
         taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
         if not opt.test:
             taskMgr.doMethodLater(0.1,self.trainVisor,'training control')
+        elif opt.load:
             self.time_taken = []
+            self.reward = 0.0
             self.success = 0
             self.failure = 0
-        elif opt.load:
             taskMgr.doMethodLater(0.1,self.testVisor,'testing control')
 
         #define our policy network
@@ -410,20 +411,20 @@ class World(DirectObject):
             #stopping condition
             if done:
                 self.success += 1
-                print('success!')
                 break
             elif t == 20:
                 self.failure += 1
-                print('failure!')
                 break
 
         self.episode += 1
+        self.reward += accum_reward
         self.time_taken.append(t)
 
         success_rate = self.success / self.episode
         failure_rate = self.failure / self.episode
+        avg_reward = self.reward / self.episode
         avg_time = sum(self.time_taken) / len(self.time_taken)
-        sys.stdout.write("episodes: %i | success_rate: %.5f | failure_rate: %.5f | avg_time: %.5f \r" %(self.episode,success_rate,failure_rate,avg_time))
+        sys.stdout.write("episodes: %i | success_rate: %.5f | failure_rate: %.5f | avg_time: %.5f | avg_reward: %.5f \r" %(self.episode,success_rate,failure_rate,avg_time,avg_reward))
 
         return task.again
     ##########################################################################

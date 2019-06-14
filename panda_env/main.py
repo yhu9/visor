@@ -73,12 +73,12 @@ class World(DirectObject):
         #1. SPINS THE LIGHT SOURCE
         #2. VISOR CONTROLLER
         taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
-        if not opt.test and opt.load:
+        if not opt.test:
             taskMgr.doMethodLater(0.1,self.trainVisor,'training control')
             self.time_taken = []
             self.success = 0
             self.failure = 0
-        else:
+        elif opt.load:
             taskMgr.doMethodLater(0.1,self.testVisor,'testing control')
 
         #define our policy network

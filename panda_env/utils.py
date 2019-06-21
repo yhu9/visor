@@ -10,6 +10,19 @@ from imutils import face_utils
 class ShadowDetector():
     def __init__(self): return
 
+
+    def get_shadowgt(self,rgb):
+
+        rgb = rgb - 51        #remove ambient light = 20%
+        rmask = rgb[:,:,2] == 0
+        gmask = rgb[:,:,1] == 0
+        bmask = rgb[:,:,0] == 0
+
+        shadow_mask = rmask & gmask & bmask
+
+        return shadow_mask
+
+
     #single image shadow detector using ycrcb color space
     def get_shadow(self,rgb):
 
@@ -17,7 +30,7 @@ class ShadowDetector():
         ycrcb = cv2.cvtColor(rgb,cv2.COLOR_RGB2YCrCb)   #cvt color space to ycrcb
         ycrcb = cv2.GaussianBlur(ycrcb,(5,5),3)         #blur the image
         y_mean = np.mean(ycrcb[illum_mask][:,0])        #grab the mean
-        #y_std = np.std(ycrcb[illum_mask][:,0])         #grab the std
+        y_std = np.std(ycrcb[illum_mask][:,0])         #grab the std
         mask = ycrcb[:,:,0] < y_mean                    #ycrcb[:,:,0] < y_mean - y_std / a
         mask = mask * illum_mask                        #remove background
 
@@ -50,12 +63,23 @@ class LM_Detector():
         #cv2.imshow("image",rgb)
         #cv2.waitKey(0)
         #quit()
-        if rightmost == -1: return
+        if rightmost == -1: return rgb,0
+        print(bbox.top(),bbox.bottom(),bbox.left(),bbox.right())
         lm = face_utils.shape_to_np(self.predictor5(rgb,bbox))
         lm[:,0] = lm[:,0] - bbox.left()
         lm[:,1] = lm[:,1] - bbox.top()
         rgb = rgb[bbox.top():bbox.bottom(),bbox.left():bbox.right()]
         return rgb,lm
+
+    #GET EYE GT
+    def get_eyesGT(self,rgb):
+        img = rgb - 51        #remove ambient light = 20%
+        rmask = img[:,:,2] > 0
+        gmask = img[:,:,1] == 0
+        bmask = img[:,:,0] == 0
+        eye_mask = rmask & gmask & bmask
+
+        return eye_mask
 
     #GET THE EYE REGION
     def get_eyes(self,rgb,lm,pad=40):

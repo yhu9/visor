@@ -8,10 +8,12 @@ from random import *
 import numpy as np
 
 #CUSTOM MODULES
-#from model import Model
+from utils import ShadowDetector
+from utils import LM_Detector
 
 #OTHER LIBRARIES
 import cv2
+import torch
 
 #PANDA3D
 from panda3d.core import *
@@ -38,9 +40,116 @@ def addTitle(text):
                         parent=base.a2dBottomRight, align=TextNode.ARight,
                         pos=(-0.1, 0.09), shadow=(0, 0, 0, 1))
 
+
+#OBSERVER IN OUR ENVIRONMENT WHICH DEFINES THE REWARD FUNCTION
+class Observer():
+    def __init__(self):
+        #EVALUATOR
+        self.shadowfunc = ShadowDetector()
+        self.lmfunc = LM_Detector()
+
+    #GET THE CURRENT FRAME AS NUMPY ARRAY
+    def getFrame_notex(self):
+        base.graphicsEngine.renderFrame()
+        dr = base.camNode.getDisplayRegion(0)
+        tex = dr.getScreenshot()
+        data = tex.getRamImage()
+        v = memoryview(data).tolist()
+        img = np.array(v,dtype=np.uint8)
+        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
+        img = img[:,:,:3]
+        img = img[::-1]
+        img = img[159:601,150:503,:]        #boundry based on range of head motion
+        img = cv2.resize(img,(112,224))
+
+        return img / 255.0
+
+    #GET THE CURRENT FRAME AS NUMPY ARRAY
+    def getFrame(self):
+
+        base.graphicsEngine.renderFrame()
+        dr = base.camNode.getDisplayRegion(0)
+        tex = dr.getScreenshot()
+        data = tex.getRamImage()
+        v = memoryview(data).tolist()
+        img = np.array(v,dtype=np.uint8)
+        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
+        img = img[:,:,:3]
+        img = img[::-1]
+        img, lm = self.lmfunc.get_lm(img)
+        h,w = img.shape[:2]
+        img = cv2.resize(img,(112,224))
+        lm[:,0] = lm[:,0] * (112 / w)
+        lm[:,1] = lm[:,1] * (224 / h)
+
+        return lm, img / 255.0
+
+    #REWARD MAP GENERATION GIVEN STATE S
+    def genReward(self,params,rgb,lm,gt=False):
+
+        rgb = (rgb * 255).astype(np.uint8)
+
+        if gt:
+            eye_mask = self.lmfunc.get_eyesGT(rgb)     #((cx,cy),(h,w),rotation)
+            shadow = self.shadowfunc.get_shadowgt(rgb)
+            lm = np.zeros((5,2)).astype(np.uint8)
+        else:
+            eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
+            shadow = self.shadowfunc.get_shadow(rgb)
+
+        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
+        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+        #SHADOW = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(shadow)
+
+        #525 = 15 * 35 which is the area of the visor roughly
+        #params are the visor parameters (x,y,w,h,theta)
+        A = (params[2] * params[3]) / np.sum(eye_mask)
+        threshold = EYE + IOU
+
+        #reward
+        if threshold > 1.2:
+            reward,flag = torch.Tensor([threshold]), True
+        else:
+            reward,flag = torch.Tensor([-0.10]), False
+
+        #DRAW THE SEMANTIC MASKS "OPTIONAL"
+        self.drawReward(params,eye_mask,shadow,rgb.copy(),lm,IOU,EYE,A,reward)
+
+        return reward,flag
+
+    def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,A,reward):
+
+        h,w,d = rgb.shape
+        img = np.zeros((h,w+100,d))
+
+        rgb[eye_mask] = rgb[eye_mask] * [0,0,1]
+        rgb[shadow] = rgb[shadow] * [1,0,0]
+
+        A = (params[2] * params[3]) / 300.0
+        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
+        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+
+        #show landmarks
+        for x,y in lm:
+            cv2.circle(rgb,(x,y),2,(255,0,255),-1)
+
+        #IMG IS 224 X 112
+        cv2.putText(img,"IOU %.3f" % IOU,(2,150),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"EYE %.3f" % EYE,(2,170),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"A %.3f" % A,(2,190),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"reward %.3f" % reward ,(2,210),2,0.4,(0,255,0),1,cv2.LINE_AA)
+
+        img[:,100:,:] = rgb
+        cv2.imshow('semantic mask',img)
+        cv2.waitKey(10)
+
+####################################################################################################
 class World(DirectObject):
 
     def __init__(self):
+
+        self.observer = Observer()
+
         # Preliminary capabilities check.
         if not base.win.getGsg().getSupportsBasicShaders():
             self.t = addTitle(
@@ -67,6 +176,7 @@ class World(DirectObject):
         #ADD TASKS
         #1. SPINS THE LIGHT SOURCE
         #2. VISOR CONTROLLER
+        taskMgr.add(self.viewReward,'reward')
         #taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
         #taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
         #if not opt.test:
@@ -79,6 +189,14 @@ class World(DirectObject):
 
         #define our policy network
         #self.net = Model(load=opt.load)
+
+    def viewReward(self,task):
+        img = self.observer.getFrame_notex()
+        reward,done = self.observer.genReward(self.visorparam,img,None,gt=True)
+
+        cv2.waitKey(10)
+
+        return task.again
 
     #RESET THE ENVIRONMENT
     def reset(self):
@@ -145,7 +263,7 @@ class World(DirectObject):
         self.car = loader.loadModel("assets/car.egg")
         self.car.reparentTo(render)
         self.car.setPos(0, 0, 0)
-        self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
+        #self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
 
         self.dennis = Actor('assets/dennis.egg',{"head_movement": "assets/dennis-head_movement.egg"})
         self.dennis.reparentTo(self.car)
@@ -163,7 +281,6 @@ class World(DirectObject):
 
         #LOAD THE LIGHT SOURCE
         self.sun = DirectionalLight("Dlight")
-        self.sun.color = self.sun.color * 5
         self.light = render.attachNewNode(self.sun)
         self.light.node().setScene(render)
         self.light.node().setShadowCaster(True)
@@ -175,7 +292,7 @@ class World(DirectObject):
         render.setLight(self.light)
 
         self.alight = render.attachNewNode(AmbientLight("Ambient"))
-        self.alight.node().setColor(LVector4(0.5, 0.5, 0.5, 1))
+        self.alight.node().setColor(LVector4(0.2, 0.2, 0.2, 1))
         render.setLight(self.alight)
 
         #Important! Enable the shader generator.

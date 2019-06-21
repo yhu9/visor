@@ -13,8 +13,6 @@ import torch.nn.functional as F
 import resnet
 import matplotlib.pyplot as plt
 
-from utils import ShadowDetector
-from utils import LM_Detector
 from logger import Logger
 
 ####################################################3
@@ -76,7 +74,6 @@ class DQN(nn.Module):
     def __init__(self):
         super(DQN,self).__init__()
 
-        #self.res18 = models.resnet18()
         self.res18 = resnet.resnet18()
         self.m1 = nn.Sequential(
                 nn.ReLU(),
@@ -116,7 +113,6 @@ class anet2(nn.Module):
         out = self.m1(x)
         return out
 
-
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
     def __init__(self,load=False):
@@ -135,14 +131,12 @@ class Model():
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 400
-        self.TARGET_UPDATE = 5
+        self.TARGET_UPDATE = 10
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000)
 
         #EVALUATOR
-        self.shadowfunc = ShadowDetector()
-        self.lmfunc = LM_Detector()
 
         #OUR NETWORK
         self.pnet = DQN()
@@ -240,58 +234,6 @@ class Model():
         actions = self.net(x)
 
         return actions
-
-    #REWARD MAP GENERATION GIVEN STATE S
-    def genReward(self,params,rgb,lm,draw=False):
-        rgb = (rgb * 255).astype(np.uint8)
-        eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
-        #self.lmfunc.view_lm(rgb,lm)                #for visualization
-        shadow = self.shadowfunc.get_shadow(rgb)
-
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
-
-        #525 = 15 * 35 which is the area of the visor roughly
-        #params are the visor parameters (x,y,w,h,theta)
-        A = (params[2] * params[3]) / np.sum(eye_mask)
-        threshold = EYE + IOU
-
-        #reward
-        if threshold > 1.2:
-            reward,flag = torch.Tensor([threshold - A]), True
-        else:
-            reward,flag = torch.Tensor([-0.20]), False
-
-        #DRAW THE SEMANTIC MASKS "OPTIONAL"
-        self.drawReward(params,eye_mask,shadow,rgb.copy(),lm,IOU,EYE,A,reward)
-
-        return reward,flag
-
-    def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,A,reward):
-
-        h,w,d = rgb.shape
-        img = np.zeros((h,w+100,d))
-
-        rgb[eye_mask] = rgb[eye_mask] * [0,0,1]
-        rgb[shadow] = rgb[shadow] * [1,0,0]
-
-        A = (params[2] * params[3]) / 300.0
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
-
-        #show landmarks
-        for x,y in lm:
-            cv2.circle(rgb,(x,y),2,(255,0,255),-1)
-
-        #IMG IS 224 X 112
-        cv2.putText(img,"IOU %.3f" % IOU,(2,150),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"EYE %.3f" % EYE,(2,170),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"A %.3f" % A,(2,190),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"reward %.3f" % reward ,(2,210),2,0.4,(0,255,0),1,cv2.LINE_AA)
-
-        img[:,100:,:] = rgb
-        cv2.imshow('semantic mask',img)
-        cv2.waitKey(10)
 
     def save(self):
         if not os.path.isdir('model'): os.mkdir('model')

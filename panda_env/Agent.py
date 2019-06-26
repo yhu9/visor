@@ -157,7 +157,6 @@ class Agent():
         else:
             self.epsilon = EPSILON_MIN
 
-        print(self.epsilon)
         self.noise.reset()
 
         return actor_loss.item(), critic_loss.item()

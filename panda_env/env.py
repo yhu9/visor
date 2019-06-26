@@ -1,181 +1,38 @@
-#!/usr/bin/env python
-from itertools import count
-import sys
-import os
+
+import random
 from math import pi, sin, cos,sqrt
-from random import *
 import numpy as np
-import argparse
 
 #CUSTOM MODULES
-from model import Model
 from utils import ShadowDetector
 from utils import LM_Detector
 
 #OTHER LIBRARIES
 import cv2
-import torch
 
 #PANDA3D
 from panda3d.core import *
 from direct.task import Task
-from direct.showbase.ShowBase import ShowBase
+import direct.directbase.DirectStart
 #from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
 from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
-
 from panda3d.direct import throw_new_frame
 
-#import openai gya
-import gym
-
 ################################################################################################
 ################################################################################################
-#OBSERVER IN OUR ENVIRONMENT WHICH DEFINES THE REWARD FUNCTION
-class Observer():
-    def __init__(self):
-        #EVALUATOR
-        self.shadowfunc = ShadowDetector()
-        self.lmfunc = LM_Detector()
-
-    #GET THE CURRENT FRAME AS NUMPY ARRAY
-    def getFrame_notex(self):
-        base.graphicsEngine.renderFrame()
-        dr = base.camNode.getDisplayRegion(0)
-        tex = dr.getScreenshot()
-        data = tex.getRamImage()
-        v = memoryview(data).tolist()
-        img = np.array(v,dtype=np.uint8)
-        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
-        img = img[:,:,:3]
-        img = img[::-1]
-        img = img[159:601,150:503,:]        #boundry based on range of head motion
-        img = cv2.resize(img,(112,224))
-        return img / 255.0
-
-    #GET THE CURRENT FRAME AS NUMPY ARRAY
-    def getFrame(self):
-
-        base.graphicsEngine.renderFrame()
-        dr = base.camNode.getDisplayRegion(0)
-        tex = dr.getScreenshot()
-        data = tex.getRamImage()
-        v = memoryview(data).tolist()
-        img = np.array(v,dtype=np.uint8)
-        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
-        img = img[:,:,:3]
-        img = img[::-1]
-        img, lm = self.lmfunc.get_lm(img)
-        h,w = img.shape[:2]
-        img = cv2.resize(img,(112,224))
-        lm[:,0] = lm[:,0] * (112 / w)
-        lm[:,1] = lm[:,1] * (224 / h)
-
-        return lm, img / 255.0
-
-    #get state
-    def getstate(self,prv_frame,cur_frame):
-        h,w = cur_frame.shape[:2]
-        d = 6
-        state = np.zeros((h,w,d))
-        state[:,:,:3] = prv_frame
-        state[:,:,3:] = cur_frame
-
-        state = torch.from_numpy(np.ascontiguousarray(state)).float()
-        state = state.permute(2,0,1)
-        return state
-
-    #REWARD MAP GENERATION GIVEN STATE S
-    def genRewardGT(self,params,noshadow,shadow):
-
-        noshadow = (noshadow * 255).astype(np.uint8)
-        shadow = (shadow * 255).astype(np.uint8)
-
-        eye_mask = self.lmfunc.get_eyesGT(noshadow)     #((cx,cy),(h,w),rotation)
-        shadow = self.shadowfunc.get_shadowgt(shadow)
-        lm = np.zeros((5,2)).astype(np.uint8)
-
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
-        #SHADOW = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(shadow)
-
-        #525 = 15 * 35 which is the area of the visor roughly
-        #params are the visor parameters (x,y,w,h,theta)
-        A = (params[2] * params[3]) / np.sum(eye_mask)
-        threshold = EYE + IOU
-
-        #reward
-        if threshold > 1.2:
-            reward,flag = 100.0 , True
-        else:
-            reward,flag = -1.0, False
-
-        #DRAW THE SEMANTIC MASKS "OPTIONAL"
-        self.drawReward(params,eye_mask,shadow,noshadow.copy(),lm,IOU,EYE,A,reward)
-
-        return reward,flag
-
-    #REWARD MAP GENERATION GIVEN STATE S
-    def genReward(self,params,rgb,lm,gt=False):
-
-        rgb = (rgb * 255).astype(np.uint8)
-
-        if gt:
-            eye_mask = self.lmfunc.get_eyesGT(rgb)     #((cx,cy),(h,w),rotation)
-            shadow = self.shadowfunc.get_shadowgt(rgb)
-            lm = np.zeros((5,2)).astype(np.uint8)
-        else:
-            eye_mask = self.lmfunc.get_eyes(rgb,lm)     #((cx,cy),(h,w),rotation)
-            shadow = self.shadowfunc.get_shadow(rgb)
-
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
-        #SHADOW = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(shadow)
-
-        #525 = 15 * 35 which is the area of the visor roughly
-        #params are the visor parameters (x,y,w,h,theta)
-        A = (params[2] * params[3]) / np.sum(eye_mask)
-        threshold = EYE + IOU
-
-        #reward
-        if threshold > 1.3:
-            reward,flag = torch.Tensor([100.0]), True
-        else:
-            reward,flag = torch.Tensor([-1.00]), False
-
-        #DRAW THE SEMANTIC MASKS "OPTIONAL"
-        self.drawReward(params,eye_mask,shadow,rgb.copy(),lm,IOU,EYE,A,reward)
-
-        return reward,flag
-
-    def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,A,reward):
-
-        h,w,d = rgb.shape
-        img = np.zeros((h,w+100,d))
-
-        rgb[eye_mask] = rgb[eye_mask] * [0,0,1]
-        rgb[shadow] = rgb[shadow] * [1,0,0]
-
-        A = (params[2] * params[3]) / 300.0
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
-
-        #show landmarks
-        for x,y in lm:
-            cv2.circle(rgb,(x,y),2,(255,0,255),-1)
-
-        #IMG IS 224 X 112
-        cv2.putText(img,"IOU %.3f" % IOU,(2,150),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"EYE %.3f" % EYE,(2,170),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"A %.3f" % A,(2,190),2,0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.putText(img,"reward %.3f" % reward ,(2,210),2,0.4,(0,255,0),1,cv2.LINE_AA)
-
-        img[:,100:,:] = rgb
-        cv2.imshow('semantic mask',img)
-        cv2.waitKey(10)
-
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
 ################################################################################################
 ################################################################################################
 ################################################################################################
@@ -193,12 +50,9 @@ def addTitle(text):
                         pos=(-0.1, 0.09), shadow=(0, 0, 0, 1))
 
 #MAIN CLASS FOR GENERATING THE ENVIRONMENT
-class CustomEnv(gym.Env):
+class World(DirectObject):
     def __init__(self):
 
-        base = ShowBase()
-
-        self.obs = Observer()
         # Preliminary capabilities check.
         if not base.win.getGsg().getSupportsBasicShaders():
             self.t = addTitle(
@@ -209,53 +63,146 @@ class CustomEnv(gym.Env):
                 "Shadow Demo: Video driver reports that depth textures are not supported.")
             return
 
+        #SHADOW DETECTOR AND LANDMARK DETECTOR
+        self.shadowfunc = ShadowDetector()
+        self.lmfunc = LM_Detector()
+
         #base.backfaceCullingOff()
         base.setBackgroundColor(0, 0, 0, 1)
         base.camLens.setNearFar(0.1, 10000)
         base.camLens.setFov(60)
 
+        # examine the state space
+        self.state_size = (6,224,112)
+        print('Size of state:', self.state_size)
+        self.action_low = np.array([0,0,0,0,0])
+        print('Action low:', self.action_low)
+        self.action_high = np.array([35,15,35,15,3.14/2])
+        print('Action high: ', self.action_high)
+
         #initialize the scene
         self.init_scene()
         self.incrementCameraPosition(0)
-        self.incLightPos(0)
+        self.addControls()
+        self.reset()
 
-        #ADD TASKS
-        #1. SPINS THE LIGHT SOURCE
-        #2. VISOR CONTROLLER
-        taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
-        if not opt.test:
-            taskMgr.doMethodLater(0.1,self.trainVisor,'training control')
-        elif opt.load:
-            self.time_taken = []
-            self.reward = 0.0
-            self.success = 0
-            self.failure = 0
-            taskMgr.doMethodLater(0.1,self.testVisor,'testing control')
+        #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
+        taskMgr.doMethodLater(1.0,self.viewReward,"drawReward")
 
-        #define our policy network
-        self.net = Model(load=opt.load)
+    def viewReward(self,task):
+        self.genRewardGT()
+        return Task.again
 
-        #get image without shadow
-        self.shadowoff()
-        self.noshadow_img = self.obs.getFrame_notex()
+    def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,reward):
+
+        h,w,d = rgb.shape
+        img = np.zeros((h,w+100,d))
+
+        rgb[eye_mask] = rgb[eye_mask] * [0,0,1]
+        rgb[shadow] = rgb[shadow] * [1,0,0]
+
+        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
+        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+
+        #show landmarks
+        for x,y in lm:
+            cv2.circle(rgb,(x,y),2,(255,0,255),-1)
+
+        #IMG IS 224 X 112
+        cv2.putText(img,"IOU %.3f" % IOU,(2,h-54),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"EYE %.3f" % EYE,(2,h-34),2,0.4,(0,255,0),1,cv2.LINE_AA)
+        cv2.putText(img,"reward %.3f" % reward ,(2,h-14),2,0.4,(0,255,0),1,cv2.LINE_AA)
+
+        img[:,100:,:] = rgb
+        cv2.imshow('semantic mask',img)
+        cv2.waitKey(10)
+
+    #REWARD MAP GENERATION GIVEN STATE S
+    def genRewardGT(self):
+        shadow_img = self.getFrame_notex()
+        noshadow = (self.noshadow_img * 255).astype(np.uint8)
+        shadow = (shadow_img * 255).astype(np.uint8)
+
+        eye_mask = self.lmfunc.get_eyesGT(noshadow)     #((cx,cy),(h,w),rotation)
+        shadow_mask = self.shadowfunc.get_shadowgt(shadow)
+        lm = np.zeros((5,2)).astype(np.uint8)
+
+        IOU = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(np.logical_or(eye_mask,shadow_mask))
+        EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
+        #shadow_mask = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(shadow_mask)
+        #525 = 15 * 35 which is the area of the visor roughly
+        #params are the visor parameters (x,y,w,h,theta)
+        #A = (params[2] * params[3]) / np.sum(eye_mask)
+        #threshold = EYE + IOU
+        reward = IOU
+
+        #DRAW THE SEMANTIC MASKS "OPTIONAL"
+        self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,reward)
+
+        return reward
+
+        #reward
+        if threshold > 1.2:
+            reward,flag = threshold, True
+        else:
+            reward,flag = -0.1, False
+
+        #DRAW THE SEMANTIC MASKS "OPTIONAL"
+        self.drawReward(params,eye_mask,shadow_mask,shadow.copy(),lm,IOU,EYE,A,reward)
+
+        return reward,flag
+
+    #GET THE CURRENT FRAME AS NUMPY ARRAY
+    def getFrame(self):
+        base.graphicsEngine.renderFrame()
+        dr = self.cam.node().getDisplayRegion(0)
+        tex = dr.getScreenshot()
+        data = tex.getRamImage()
+        v = memoryview(data).tolist()
+        img = np.array(v,dtype=np.uint8)
+        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
+        img = img[:,:,:3]
+        img = img[::-1]
+        img = img[159:601,150:503,:]        #boundry based on range of head motion
+        img = cv2.resize(img,(112,112))
+        return img / 255.0
+
+    #GET THE CURRENT FRAME AS NUMPY ARRAY
+    def getFrame_notex(self):
+        base.graphicsEngine.renderFrame()
+        dr = self.cam2.node().getDisplayRegion(0)
+        tex = dr.getScreenshot()
+        data = tex.getRamImage()
+        v = memoryview(data).tolist()
+        img = np.array(v,dtype=np.uint8)
+        img = img.reshape((tex.getYSize(),tex.getXSize(),4))
+        img = img[:,:,:3]
+        img = img[::-1]
+        img = img[159:601,150:503,:]        #boundry based on range of head motion
+        img = cv2.resize(img,(112,112))
+        return img / 255.0
 
     #RESET THE ENVIRONMENT
     def reset(self):
-        self.dennis.pose('head_movement',randint(1,200))     #CHOOSE A RANDOM POSE
-        self.light_angle = randint(-5,5)
+        poseid = random.randint(1,200)
+        self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.light_angle = random.randint(-10,0)
         self.incLightPos(0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
         self.shadowoff()
-        self.noshadow_img = self.obs.getFrame_notex()
+        self.noshadow_img = self.getFrame_notex()
+        self.prv_frame = self.getFrame()
 
         #init the visor to the same position always
-        self.visorparam = [17,7,5,4,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
         self.visormask *= 0
         cv2.fillConvexPoly(self.visormask,box,(1))
+
         #APPLY VISOR MASK
         for i in range(len(self.hexes)):
             for j in range(len(self.hexes[-1])):
@@ -267,15 +214,49 @@ class CustomEnv(gym.Env):
 
         #render the reset frame
         base.graphicsEngine.renderFrame()
+        cur_frame = self.getFrame()
+        h,w = cur_frame.shape[:2]
+        frame = np.zeros((h,w,6))
+        frame[:,:,:3] = self.prv_frame
+        frame[:,:,3:] = cur_frame
+        state = frame,self.visorparam
+        return state
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
+
+        #GENERATE SECOND WINDOW TO SHOW MATERIAL REGIONS
+        self.win2 = base.openWindow()
+        displayRegion = self.win2.makeDisplayRegion()
+        self.cam2 = NodePath(Camera('cam'))
+        displayRegion.setCamera(self.cam2)
+        self.render2 = NodePath('render2')
+        self.cam2.reparentTo(self.render2)
+        self.cam2.node().getLens().setNearFar(0.1, 10000)
+        self.cam2.node().getLens().setFov(60)
+        self.cam2.setPos(-3.8,0.0,2.25)
+        self.cam2.lookAt(-3,-0.2,2.69)
+        self.dennis2 = Actor('assets/dennis.egg',{"head_movement": "assets/dennis-head_movement.egg"})
+        self.dennis2.reparentTo(self.render2)
+        self.dennis2.setPlayRate(0.5,'head_movement')
+        self.dennis2.loop("head_movement")
+
+        #SET MAIN DISPLAY
+        display = base.win.makeDisplayRegion()
+        self.cam = NodePath(Camera('cam1'))
+        display.setCamera(self.cam)
+        self.render1 = NodePath('render1')
+        self.cam.reparentTo(self.render1)
+        self.cam.node().getLens().setNearFar(0.1, 10000)
+        self.cam.node().getLens().setFov(60)
+        self.cam.setPos(-10.8,0.0,5.25)
+        self.cam.lookAt(-3,-0.2,2.69)
+
         # Load the scene.
         floorTex = loader.loadTexture('maps/envir-ground.jpg')
-
         cm = CardMaker('')
         cm.setFrame(-2, 2, -2, 2)
-        floor = render.attachNewNode(PandaNode("floor"))
+        floor = self.render1.attachNewNode(PandaNode("floor"))
         for y in range(12):
             for x in range(12):
                 nn = floor.attachNewNode(cm.generate())
@@ -284,66 +265,121 @@ class CustomEnv(gym.Env):
         floor.setTexture(floorTex)
         floor.flattenStrong()
 
-        self.car = loader.loadModel("assets/car.egg")
-        self.car.reparentTo(render)
-        self.car.setPos(0, 0, 0)
-        #self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
+        self.car = loader.loadModel("assets/cartex.egg")
+        self.car.reparentTo(self.render1)
+        self.car.set_two_sided(True)    #BEST IF I CAN SOLVE THE BIAS PROBLEM ON THE SHADER
 
-        self.dennis = Actor('assets/dennis.egg',{"head_movement": "assets/dennis-head_movement.egg"})
-        self.dennis.reparentTo(self.car)
-        self.dennis.pose('head_movement',1)
-        #self.dennis.setPlayRate(1.,'head_movement')
-        #self.dennis.loop("head_movement")
+        self.dennis = Actor('assets/dennistex.egg',{"head_movement": "assets/dennistex-head_movement.egg"})
+        self.dennis.reparentTo(self.render1)
+        self.dennis.setPlayRate(0.5,'head_movement')
+        self.dennis.loop("head_movement")
         #CURRENTLY SHADOW QUALITY IS REDUCED DUE TO SHADOW ACNE
 
         self.visor, self.hexes = self.genVisor()
-        self.visor.reparentTo(self.car)
+        self.visor.reparentTo(self.dennis)
         self.visor.set_two_sided(True)
-        self.visor.setPos(-3.75,.5,2.6)
+        self.visor.setPos(-3.75,.5,2.45)
         self.visor.setH(-90)
-        self.visor.setP(70)
+        self.visor.setP(90)
         self.visor.setScale(0.015,0.015,0.015)
 
-        #LOAD THE LIGHT SOURCE
         self.sun = DirectionalLight("Dlight")
         self.sun.color = self.sun.color * 5
-        self.light = render.attachNewNode(self.sun)
-        self.light.node().setScene(render)
+        self.light = self.render1.attachNewNode(self.sun)
+        self.light.node().setScene(self.render1)
         self.light.node().setShadowCaster(True)
         self.light.node().setCameraMask(BitMask32.bit(1))
         self.light.node().showFrustum()
         self.light.node().getLens().set_film_size(20)
         self.light.node().getLens().setFov(20)
         self.light.node().getLens().setNearFar(10, 50)
-        render.setLight(self.light)
+        self.render1.setLight(self.light)
+        self.render2.setLight(self.light)
 
         self.alight = render.attachNewNode(AmbientLight("Ambient"))
         self.alight.node().setColor(LVector4(0.2, 0.2, 0.2, 1))
-        render.setLight(self.alight)
+        self.render1.setLight(self.alight)
+        self.render2.setLight(self.alight)
 
         #Important! Enable the shader generator.
-        #render.setShaderInput('push',0.10)
-        render.setShaderAuto()
-        render.show(BitMask32.bit(1))
+        self.render1.setShaderAuto()
+        self.render2.setShaderAuto()
+        self.render1.show(BitMask32.bit(1))
+        self.render2.show(BitMask32.bit(1))
 
         # default values
-        self.max_reward = -10.0
-        self.episode = 0
         self.light_angle = 0.0
         self.car_x = 0.0
         self.cameraSelection = 0
+        self.lightSelection = 0
         self.visorMode = 0
         self.visormask = np.zeros((15,35))
         self.visorparam = [17,7,10,8,0]      #x,y,w,h,r
         self.light.node().hideFrustum()
 
+    def putSunOnFace(self):
+        self.lightSelection = 0
+        self.light.setPos(-20,0,5)
+        self.light.lookAt(0,0,0)
+
+    def toggleVisor(self,n):
+        self.visorMode = (self.visorMode + n) % 2
+        if (self.visorMode == 1):
+            taskMgr.remove("random controller")
+            for row in self.hexes:
+                for h in row:
+                    h.show(BitMask32.bit(1))
+            render.show(BitMask32.bit(1))
+        if (self.visorMode == 0):
+            taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
+            #taskMgr.add(self.randomVisor,"random controller")
+    def recordScreen(self):
+        base.movie(namePrefix='recording/frame',duration=5,fps=15)
+    def randomVisor(self,task):
+
+        for _ in range(300):
+            i = random.randint(0,len(self.hexes)-1)
+            j = random.randint(0,len(self.hexes[-1]) - 1)
+            self.hexes[i][j].hide(BitMask32.bit(1))
+
+        for _ in range(300):
+            i = random.randint(0,len(self.hexes)-1)
+            j = random.randint(0,len(self.hexes[-1]) - 1)
+            self.hexes[i][j].show(BitMask32.bit(1))
+
+        self.render1.show(BitMask32.bit(1))
+        self.render2.show(BitMask32.bit(1))
+
+        return Task.again
+
+    #SOME CONTROL SEQUENCES
+    def addControls(self):
+        #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
+        #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
+        #addInstructions(0.18, 'a : put sun on face')
+        #addInstructions(0.24, 's : toggleSun')
+        #addInstructions(0.30, 'd : toggle visor')
+        #addInstructions(0.36, 'v: View the Depth-Texture results')
+        #addInstructions(0.42, 'tab : view buffer')
+        self.accept('escape', self.exit)
+        self.accept("a", self.putSunOnFace)
+        self.accept("d", self.toggleVisor,[1])
+        self.accept("r", self.recordScreen)
+        self.accept("arrow_left", self.incrementCameraPosition, [-1])
+        self.accept("arrow_right", self.incrementCameraPosition, [1])
+        self.accept("f12",base.screenshot,['recording/snapshot'])
+        self.accept("tab", base.bufferViewer.toggleEnable)
+
+    def exit(self):
+        quit()
 
     def shadowoff(self):
         #APPLY VISOR MASK
         for i in range(len(self.hexes)):
             for j in range(len(self.hexes[-1])):
                 self.hexes[i][j].hide(BitMask32.bit(1))
-        render.show(BitMask32.bit(1))
+        self.render1.show(BitMask32.bit(1))
+        self.render2.show(BitMask32.bit(1))
 
     def shadowon(self):
         #APPLY VISOR MASK
@@ -353,29 +389,25 @@ class CustomEnv(gym.Env):
                     self.hexes[i][j].show(BitMask32.bit(1))
                 else:
                     self.hexes[i][j].hide(BitMask32.bit(1))
-        render.show(BitMask32.bit(1))
+        self.render1.show(BitMask32.bit(1))
+        self.render2.show(BitMask32.bit(1))
+
+    #get state
+    def getstate(self,prv_frame,cur_frame):
+        h,w = cur_frame.shape[:2]
+        d = 6
+        frame = np.zeros((h,w,d))
+        frame[:,:,:3] = prv_frame
+        frame[:,:,3:] = cur_frame
+        state = frame,self.visorparam
+        return state
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
-    def step(self,prv_frame, actions,speed=1):
+    def step(self,actions,speed=1):
 
-        a1,a2,a3 = [a.item() for a in actions]
-
-        #action1 = move x y up down
-        if a1 == 0: self.visorparam[0] += speed
-        elif a1 == 1: self.visorparam[0] -= speed
-        elif a1 == 2: self.visorparam[1] += speed
-        elif a1 == 3: self.visorparam[1] -= speed
-
-        #action2 = inc h,w up down
-        if a2 == 0: self.visorparam[2] += speed
-        elif a2 == 1: self.visorparam[2] -= speed
-        elif a2 == 2: self.visorparam[3] += speed
-        elif a2 == 3: self.visorparam[3] -= speed
-
-        #action3 = inc theta up down
-        if a2 == 0: self.visorparam[4] += 5 * speed * pi / 180
-        elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
+        actions = (actions + 1) * (self.action_low + self.action_high) / 2
+        self.visorparam = actions
 
         #get image with shadow after action
         self.incLightPos(speed)
@@ -384,22 +416,28 @@ class CustomEnv(gym.Env):
         self.visorparam[2] = min(max(0,self.visorparam[2]),34)
         self.visorparam[3] = min(max(0,self.visorparam[3]),14)
         self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
-        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])     #PADDED HEIGHT AND WIDTH OF 15PIXELS
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
         self.visormask *= 0
         cv2.fillConvexPoly(self.visormask,box,(1))
+
+        #display the visor and show some data
         self.shadowon()
-        cur_frame = self.obs.getFrame_notex()
+        cur_frame = self.getFrame()
+        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
+        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
+        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
+        cv2.waitKey(1)
 
         #get next state and reward
-        reward,done = self.obs.genRewardGT(self.visorparam,self.noshadow_img,cur_frame)
+        reward = self.genRewardGT()
 
         #set the next state
-        next_state = self.obs.getstate(prv_frame,cur_frame)
-        prv_frame = cur_frame.copy()
+        next_state = self.getstate(self.prv_frame,cur_frame)
+        self.prv_frame = cur_frame.copy()
 
-        return next_state,reward,done
+        return next_state,reward,False
 
     def spinLightTask(self,task):
         angleDegrees = (task.time * 5 - 90)
@@ -410,9 +448,9 @@ class CustomEnv(gym.Env):
         return task.cont
 
     def incLightPos(self,speed):
-        angleDegrees = (self.light_angle - 90)
+        angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(20.0 * sin(angleRadians),20.0 * cos(angleRadians),10)
+        self.light.setPos(20.0 * sin(angleRadians),20.0 * cos(angleRadians),5)
         self.light.lookAt(0,0,0)
         self.light_angle = self.light_angle + speed
 
@@ -423,20 +461,20 @@ class CustomEnv(gym.Env):
     def incrementCameraPosition(self,n):
         self.cameraSelection = (self.cameraSelection + n) % 3
         if (self.cameraSelection == 1):
-            base.cam.setPos(-20,0,5)
-            base.cam.lookAt(0,0,0)
+            self.cam.setPos(-20,0,5)
+            self.cam.lookAt(0,0,0)
 
         if (self.cameraSelection == 0):
-            #base.camLens.setNearFar(0,10)
-            base.cam.setPos(-3.8,0.0,2.25)
-            base.cam.lookAt(-3,-0.2,2.69)
+            #self.camLens.setNearFar(0,10)
+            self.cam.setPos(-3.8,0.0,2.25)
+            self.cam.lookAt(-3,-0.2,2.69)
 
         if (self.cameraSelection == 2):
-            base.cam.setPos(self.light.getPos())
-            base.cam.lookAt(0,0,0)
+            self.cam.setPos(self.light.getPos())
+            self.cam.lookAt(0,0,0)
 
     def genVisor(self,w=35,h=15):
-        visor = render.attach_new_node("visor")
+        visor = self.render1.attach_new_node("visor")
         objects = [[None] * h for i in range(w)]
         offsetx = (1.55) / 2.00
         offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
@@ -448,57 +486,14 @@ class CustomEnv(gym.Env):
                 objects[i][j].setPos((offsety * 2.0*i) + (offsety * (j % 2)), offsetx*2*j,5)
                 objects[i][j].setScale(1.1,1.1,1.1)
                 objects[i][j].setAlphaScale(0.01)
-
         return visor,objects
 
-    ##########################################################################
-    #TRAIN THE VISOR
-    def trainVisor(self,task):
+#################################################################################
+#################################################################################
+#################################################################################
+#################################################################################
 
-        #RESET
-        self.reset()
-
-        #GET THE CURRENT FRAME AS A NUMPY ARRAY
-        cur_frame = self.obs.getFrame_notex()
-        prv_frame = self.obs.getFrame_notex()
-        state = self.obs.getstate(prv_frame,cur_frame)
-
-        accum_reward = 0.0
-        for t in count():
-            #take one step in the environment using the action
-            actions = self.net.select_action(state)
-            next_state,reward,done = self.step(prv_frame, actions)
-
-            #get the reward for applying action on the prv state
-            accum_reward += reward
-
-            #store transition into memory (s,a,s_t+1,r)
-            self.net.memory.push(state,actions,next_state,reward,done)
-            state = next_state
-
-            #optimize the network using memory
-            loss = self.net.optimize()
-
-            #display the visor and show some data
-            cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-            cv2.waitKey(10)
-            sys.stdout.write("episode: %i | loss: %.5f |  R_step: %.5f |    R_accum: %.5f | R_max: %.5f \r" %(self.episode,loss,reward,accum_reward,self.max_reward))
-
-            #stopping condition
-            if done or t == 10:
-                if accum_reward > self.max_reward:
-                    self.max_reward = accum_reward
-                    self.net.save()
-                break
-
-        #LOG THE SUMMARIES
-        #self.net.logger.scalar_summary({'max_reward': self.max_reward, 'ep_reward': accum_reward, 'loss': loss},self.episode)
-
-        #update the value network
-        self.episode += 1
-        if self.episode % self.net.TARGET_UPDATE == 0:
-            self.net.target_net.load_state_dict(self.net.model.state_dict())
-
-        return task.again
-    ##########################################################################
+if __name__ == '__main__':
+    w = World()
+    base.run()
 

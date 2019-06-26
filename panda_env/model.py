@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import resnet
 import matplotlib.pyplot as plt
+from torch.autograd import Variable
 
 from logger import Logger
 
@@ -45,8 +46,7 @@ class ResBlock(nn.Module):
 
 ##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
-Transition = namedtuple('Transition',('state', 'action1','action2','action3', 'next_state', 'reward'))
-
+Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward', 'done'))
 class ReplayMemory(object):
 
     def __init__(self, capacity):
@@ -62,12 +62,29 @@ class ReplayMemory(object):
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
+
+        transitions = random.sample(self.memory,batch_size)
+        batch = Transition(*zip(*transitions))
+
+        curr_states = np.stack(batch.state)
+        actions = np.stack(batch.action).astype(np.int64)
+        next_states = np.stack(batch.next_state)
+        rewards = np.stack(batch.reward)
+        end = np.logical_not(np.stack(batch.done))
+
+        s1 = torch.Tensor(curr_states)
+        a1 = torch.from_numpy(actions)
+        r1 = torch.Tensor(rewards).unsqueeze(1)
+        s2 = torch.Tensor(next_states)
+        d = torch.Tensor(end).unsqueeze(1)
+
+        return s1,a1, r1, s2,d
 
     def __len__(self):
         return len(self.memory)
-##########################################################
 
+##########################################################
+#BASED ON PYTORCH EXAMPLE
 #ACTION NET WITH LIMITED ACTION SPACE
 class DQN(nn.Module):
 
@@ -95,24 +112,6 @@ class DQN(nn.Module):
         out3 = self.m3(x)
         return out1,out2,out3
 
-#ACTION NET WITH FULL ACTION SPACE
-class anet2(nn.Module):
-
-    def __init__(self,channel=3):
-        super(anet2,self).__init__()
-
-        self.m1 = nn.Sequential(
-                nn.Conv2d(channel,32,3,stride=1,padding=1),
-                ResBlock(32,32),
-                ResBlock(32,64),
-                ResBlock(64,64),
-                ResBlock(64,1),
-                )
-
-    def forward(self,x):
-        out = self.m1(x)
-        return out
-
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
     def __init__(self,load=False):
@@ -122,11 +121,11 @@ class Model():
                 torch.nn.init.xavier_uniform(m.weight.data)
 
         #LOGGER FOR VISUALIZATION
-        self.logger = Logger('./logs')
+        #self.logger = Logger('./logs')
 
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
-        self.BATCH_SIZE = 10
+        self.BATCH_SIZE = 32
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -139,76 +138,58 @@ class Model():
         #EVALUATOR
 
         #OUR NETWORK
-        self.pnet = DQN()
-        self.vnet = DQN()
+        self.model= DQN()
+        self.target_net = DQN()
 
         #LOAD THE MODULES
         if load:
-            self.pnet.load_state_dict(torch.load(load));
-            self.vnet.load_state_dict(torch.load(load));
+            self.model.load_state_dict(torch.load(load));
+            self.target_net.load_state_dict(torch.load(load));
         else:
-            self.pnet.apply(init_weights)
-            self.vnet.apply(init_weights)
+            self.model.apply(init_weights)
+            self.target_net.apply(init_weights)
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
-        self.opt = torch.optim.Adam(itertools.chain(self.pnet.parameters()),lr=0.00001,betas=(0.0,0.9))
+        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001,betas=(0.0,0.9))
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 
-    #OPTIMIZE THE NETWORK BY SAMPLING FROM THE REPLAY BUFFER
     def optimize(self):
-
+        #don't bother if you don't have enough in memory
         if len(self.memory) < self.BATCH_SIZE: return 0.0
-
-        transitions = self.memory.sample(self.BATCH_SIZE)
-        batch = Transition(*zip(*transitions))
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)),device=self.device,dtype=torch.uint8)
-        next_states = [s for s in batch.next_state if s is not None]
-
-        state_batch = torch.cat(batch.state)
-        action_batch1 = torch.cat(batch.action1)
-        action_batch2 = torch.cat(batch.action2)
-        action_batch3 = torch.cat(batch.action3)
-        reward_batch = torch.cat(batch.reward)
+        self.model.train()
+        s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
 
         #get old Q values and new Q values for belmont eq
-        a1,a2,a3 = self.pnet(state_batch)
-        state_action_values1 = a1.gather(1,action_batch1)
-        state_action_values2 = a2.gather(1,action_batch2)
-        state_action_values3 = a3.gather(1,action_batch3)
-        if len(next_states) == 0:
-            expected_state_action_values1 = reward_batch
-            expected_state_action_values2 = reward_batch
-            expected_state_action_values3 = reward_batch
-        else:
-            non_final_next_states = torch.cat(next_states)
-            nextstate_values1 = torch.zeros(self.BATCH_SIZE,device=self.device)
-            nextstate_values2 = torch.zeros(self.BATCH_SIZE,device=self.device)
-            nextstate_values3 = torch.zeros(self.BATCH_SIZE,device=self.device)
-            v1,v2,v3 = self.vnet(non_final_next_states)
-            nextstate_values1[non_final_mask] = v1.max(1)[0].detach()
-            nextstate_values2[non_final_mask] = v2.max(1)[0].detach()
-            nextstate_values3[non_final_mask] = v3.max(1)[0].detach()
-            expected_state_action_values1 = (nextstate_values1 * self.GAMMA) + reward_batch
-            expected_state_action_values2 = (nextstate_values2 * self.GAMMA) + reward_batch
-            expected_state_action_values3 = (nextstate_values3 * self.GAMMA) + reward_batch
+        qvals = self.model(s1)
+
+        q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
+        q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
+        q3 = qvals[2].gather(1,actions[:,2].unsqueeze(1))
+        state_action_values = torch.cat((q1,q2,q3),-1)
+
+        with torch.no_grad():
+            qvals_t = self.target_net(s2)
+            q1_t = qvals_t[0].max(1)[0].unsqueeze(1)
+            q2_t = qvals_t[1].max(1)[0].unsqueeze(1)
+            q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
+            q_target = torch.cat((q1_t,q2_t,q3_t),-1)
+
+        expected_state_action_values = (q_target * self.GAMMA) * d + r1
 
         #LOSS IS l2 loss of belmont equation
-        loss = self.l2(state_action_values1,expected_state_action_values1.unsqueeze(1)) + self.l2(state_action_values2,expected_state_action_values2.unsqueeze(1)) + self.l2(state_action_values3,expected_state_action_values3.unsqueeze(1))
+        loss = self.l2(state_action_values,expected_state_action_values)
 
         self.opt.zero_grad()
         loss.backward()
-        for param in self.pnet.parameters():
-            param.grad.data.clamp_(-1,1)
         self.opt.step()
 
-        return loss
-
+        return loss.item()
 
     #GREEDY ACTION SELECTION
     def select_greedy(self,state):
         with torch.no_grad():
-            a1,a2,a3 = self.pnet(state)
+            a1,a2,a3 = self.model(state)
             return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
@@ -220,7 +201,7 @@ class Model():
         if sample > eps_threshold:
             with torch.no_grad():
                 #send the state through the DQN and get the index with the highest value for that state
-                a1,a2,a3 = self.pnet(state)
+                a1,a2,a3 = self.model(state.unsqueeze(0))
 
                 return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
         else:
@@ -237,7 +218,7 @@ class Model():
 
     def save(self):
         if not os.path.isdir('model'): os.mkdir('model')
-        torch.save(self.pnet.state_dict(),'model/DQN.pth')
+        torch.save(self.model.state_dict(),'model/DQN.pth')
 
 if __name__ == '__main__':
     #net = models.resnet14(pretrained=False,channels=6)

@@ -1,4 +1,11 @@
-Attached are four folders with image results of the landmark detection. The folder names indicate the face detection algorithm and the landmark detection algorithm used.
+###########################################################################################
+###########################################################################################
+				Face detection algorithms
+###########################################################################################
+###########################################################################################
+
+http://dlib.net/face_detector.py.html
+https://www.pyimagesearch.com/2018/04/02/faster-facial-landmark-detector-with-dlib/
 
 out_model_front+dlib:
 
@@ -7,6 +14,8 @@ out_model_front+dlib:
 	- performance:
 
 		avg 0.0659s fer frame
+
+###########################################################################################
 
 out_model_s3fd+bulat:
 
@@ -18,6 +27,17 @@ out_model_s3fd+bulat:
 		avg 1.9s per frame
 
 
+###########################################################################################
+out_model_front+dlib:
+https://www.pyimagesearch.com/2018/02/26/face-detection-with-opencv-and-deep-learning/
+
+	- opencv s3fd face detector
+	- performance:
+
+		avg 0.0659s+0.01s per frame
+
+###########################################################################################
+
 out_model_yolo+dlib
 
 	- yolo face detector on cpu. https://github.com/iitzco/faced
@@ -25,6 +45,8 @@ out_model_yolo+dlib
 	- performance:
 
 		avg 0.0774s per frame
+
+###########################################################################################
 
 out_model_yolo+dlib
 

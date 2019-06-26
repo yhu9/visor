@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 from itertools import count
 import sys
 import os
@@ -20,7 +19,7 @@ import torch
 #PANDA3D
 from panda3d.core import *
 from direct.task import Task
-import direct.directbase.DirectStart
+from direct.showbase.ShowBase import ShowBase
 #from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
@@ -28,14 +27,12 @@ from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
 
 from panda3d.direct import throw_new_frame
-################################################################################################
-parser = argparse.ArgumentParser()
-parser.add_argument('--load', type=str, default=False,help='model to load')
-parser.add_argument('--test', action='store_const',const=True,default=False,help='testing flag')
 
-opt = parser.parse_args()
-################################################################################################
+#import openai gya
+import gym
 
+################################################################################################
+################################################################################################
 #OBSERVER IN OUR ENVIRONMENT WHICH DEFINES THE REWARD FUNCTION
 class Observer():
     def __init__(self):
@@ -182,7 +179,6 @@ class Observer():
 ################################################################################################
 ################################################################################################
 ################################################################################################
-################################################################################################
 
 # Function to put instructions on the screen.
 def addInstructions(pos, msg):
@@ -197,8 +193,10 @@ def addTitle(text):
                         pos=(-0.1, 0.09), shadow=(0, 0, 0, 1))
 
 #MAIN CLASS FOR GENERATING THE ENVIRONMENT
-class World(DirectObject):
+class CustomEnv(gym.Env):
     def __init__(self):
+
+        base = ShowBase()
 
         self.obs = Observer()
         # Preliminary capabilities check.
@@ -502,130 +500,5 @@ class World(DirectObject):
             self.net.target_net.load_state_dict(self.net.model.state_dict())
 
         return task.again
-
-    '''
     ##########################################################################
-    #TRAIN THE VISOR
-    def trainVisor(self,task):
-
-        #RESET
-        self.reset()
-
-        #GET THE CURRENT FRAME AS A NUMPY ARRAY
-        cur_lm, cur_frame = self.obs.getFrame()
-        prv_lm, prv_frame = self.obs.getFrame()
-        state = self.getstate(prv_frame,cur_frame)
-
-        accum_reward = 0.0
-        for t in count():
-            #take one step in the environment using the action
-            a1,a2,a3 = self.net.select_action(state)
-            self.takeaction(a1.item(),a2.item(),a3.item())
-            prv_lm, prv_frame = cur_lm.copy(),cur_frame.copy()
-            cur_lm, cur_frame = self.obs.getFrame()
-
-            #get the reward for applying action on the prv state
-            reward,done = self.net.genReward(self.visorparam,cur_frame,cur_lm)
-            accum_reward += reward
-
-            #set the next state
-            if not done:
-                next_state = self.getstate(prv_frame,cur_frame)
-            else:
-                next_state = None
-
-            #store transition into memory (s,a,s_t+1,r)
-            self.net.memory.push(state,a1,a2,a3,next_state,reward)
-            state = next_state
-
-            #optimize the network using memory
-            loss = self.net.optimize()
-
-            #display the visor and show some data
-            cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-            cv2.waitKey(10)
-            sys.stdout.write("episode: %i | loss: %.5f |  R_step: %.5f |    R_accum: %.5f | R_max: %.5f \r" %(self.episode,loss,reward.item(),accum_reward,self.max_reward))
-
-            #stopping condition
-            if done or (t == 20 and len(self.net.memory) > self.net.BATCH_SIZE):
-                if accum_reward > self.max_reward:
-                    self.max_reward = accum_reward
-                    self.net.save()
-                break
-
-        #LOG THE SUMMARIES
-        self.net.logger.scalar_summary({'max_reward': self.max_reward, 'ep_reward': accum_reward, 'loss': loss},self.episode)
-
-        #update the value network
-        self.episode += 1
-        if self.episode % self.net.TARGET_UPDATE == 0:
-            self.net.vnet.load_state_dict(self.net.pnet.state_dict())
-
-        return task.again
-
-    ##########################################################################
-    #TEST THE VISOR
-    def testVisor(self,task):
-
-        #RESET
-        self.reset()
-
-        #GET THE CURRENT FRAME AS A NUMPY ARRAY
-        cur_lm, cur_frame = self.observer.getFrame()
-        prv_lm, prv_frame = self.observer.getFrame()
-        state = self.getstate(prv_frame,cur_frame)
-
-        accum_reward = 0.0
-        for t in count():
-            #get the immediate reward for current state
-            reward,done = self.net.genReward(self.visorparam,cur_frame,cur_lm)
-            accum_reward += reward
-
-            #take one step in the environment using the action
-            a1,a2,a3 = self.net.select_greedy(state)
-            self.takeaction(a1.item(),a2.item(),a3.item())
-
-            #get new state
-            if not done:
-                prv_lm, prv_frame = cur_lm.copy(),cur_frame.copy()
-                cur_lm, cur_frame = self.getFrame()
-                next_state = self.getstate(prv_frame,cur_frame)
-            else:
-                next_state = None
-
-            #store transition into memory (s,a,s_t+1,r)
-            #self.net.memory.push(state,a1,a2,a3,next_state,reward)
-            state = next_state
-
-            #display the visor and show some data
-            cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-            cv2.waitKey(10)
-
-            #stopping condition
-            if done:
-                self.success += 1
-                break
-            elif t == 20:
-                self.failure += 1
-                break
-
-        self.episode += 1
-        self.reward += accum_reward
-        self.time_taken.append(t)
-
-        success_rate = self.success / self.episode
-        failure_rate = self.failure / self.episode
-        avg_reward = self.reward / self.episode
-        avg_time = sum(self.time_taken) / len(self.time_taken)
-        sys.stdout.write("episodes: %i | success_rate: %.5f | failure_rate: %.5f | avg_time: %.5f | avg_reward: %.5f \r" %(self.episode,success_rate,failure_rate,avg_time,avg_reward))
-
-        if self.episode == 100: return task.done
-        return task.again
-    '''
-    ##########################################################################
-
-w = World()
-base.run()
-
-
 

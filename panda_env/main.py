@@ -28,6 +28,7 @@ from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
 
 from panda3d.direct import throw_new_frame
+
 ################################################################################################
 parser = argparse.ArgumentParser()
 parser.add_argument('--load', type=str, default=False,help='model to load')

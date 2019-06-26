@@ -164,19 +164,43 @@ class World(DirectObject):
         #props = WindowProperties()
         #props.setSize(224,224)
         #base.win.requestProperties(props)
-        base.setBackgroundColor(0, 0, 0, 1)
-        base.camLens.setNearFar(0.1, 10000)
-        base.camLens.setFov(60)
+        #base.setBackgroundColor(0, 0, 0, 1)
+        #base.camLens.setNearFar(0.1, 10000)
+        #base.camLens.setFov(60)
+
+        myWindow = base.openWindow()
+        displayRegion = myWindow.makeDisplayRegion()
+        buffer_cam = Camera('cam')
+        camNP = NodePath(buffer_cam)
+        displayRegion.setCamera(camNP)
+        render2 = NodePath('render2')
+        camNP.reparentTo(render2)
+        camNP.lookAt(0,0,0)
+        camNP.setPos(-20,0,5)
+        env1 = loader.loadModel('environment.egg')
+        env1.reparentTo(render2)
+
+        display2 = base.win.makeDisplayRegion()
+        cam2 = Camera('cam2')
+        cam2NP = NodePath(cam2)
+        display2.setCamera(cam2NP)
+        render3 = NodePath('render3')
+        cam2NP.reparentTo(render3)
+        env2 = loader.loadModel('environment.egg')
+        env2.reparentTo(render3)
+
+        #env2 = loader.loadModel('environment.egg')
+        #env2.reparentTo(render)
 
         #initialize the scene
-        self.init_scene()
-        self.incrementCameraPosition(0)
-        self.putSunOnFace()
+        #self.init_scene()
+        #self.incrementCameraPosition(0)
 
+        #self.putSunOnFace()
         #ADD TASKS
         #1. SPINS THE LIGHT SOURCE
         #2. VISOR CONTROLLER
-        taskMgr.add(self.viewReward,'reward')
+        #taskMgr.add(self.viewReward,'reward')
         #taskMgr.add(self.spinLightTask,"SpinLightTask")        #ROTATE THE DIRECTIONAL LIGHTING SOURCE
         #taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
         #if not opt.test:
@@ -185,7 +209,7 @@ class World(DirectObject):
         #    taskMgr.doMethodLater(0.2,self.testVisor,'testing control')
 
         #add user controller
-        self.addControls()
+        #self.addControls()
 
     def viewReward(self,task):
         img = self.observer.getFrame_notex()
@@ -242,6 +266,17 @@ class World(DirectObject):
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
+
+        #buffer_cam.node().lookAt(0,0,0)
+        #self.dennisgt = Actor('assets/dennis.egg',{"head_movement": "assets/dennis-head_movement.egg"})
+        #self.dennisgt.reparentTo(self.car)
+        #self.dennisgt.setPlayRate(0.5,'head_movement')
+        #self.dennisgt.loop("head_movement")
+
+        ##base.camLens.setNearFar(0,10)
+        #base.cam.setPos(-3.8,0.0,2.25)
+        #base.cam.lookAt(-3,-0.2,2.69)
+
         # Load the scene.
         floorTex = loader.loadTexture('maps/envir-ground.jpg')
 

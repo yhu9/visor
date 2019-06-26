@@ -11,16 +11,16 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e6)  # replay buffer size
-BATCH_SIZE = 5         # minibatch size
+BATCH_SIZE = 32         # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 1e-2         # learning rate of the actor
-LR_CRITIC = 5e-3        # learning rate of the critic
+LR_ACTOR = 1e-4         # learning rate of the actor
+LR_CRITIC = 1e-4        # learning rate of the critic
 WEIGHT_DECAY = 0        # L2 weight decay
 EPSILON_MAX = 1.0
 EPSILON_MIN = 0.1
 EPSILON_DECAY = 1e-3
-LEARN_START = 10
+LEARN_START = 100
 UPDATE_EVERY = 1
 UPDATES_PER_STEP = 1
 
@@ -60,6 +60,10 @@ class Agent():
         self.hard_update(self.actor_target, self.actor_local)
         self.hard_update(self.critic_target, self.critic_local)
         self.t_step = 0
+
+    def load(self,actor_name,critic_name):
+        self.actor_local.load_state_dict(torch.load(actor_name))
+        self.critic_local.load_state_dict(torch.load(critic_name))
 
     def step(self, state, action, reward, next_state, done, timestep):
         """Save experience in replay memory, and use random sample from buffer to learn."""
@@ -152,6 +156,8 @@ class Agent():
             self.epsilon -= EPSILON_DECAY
         else:
             self.epsilon = EPSILON_MIN
+
+        print(self.epsilon)
         self.noise.reset()
 
         return actor_loss.item(), critic_loss.item()

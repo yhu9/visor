@@ -18,6 +18,7 @@ class Logger(object):
         for i in range(5):
             final = log_dir + str(i)
             if not os.path.exists(final):
+                print('log dir', final)
                 self.writer = tf.summary.FileWriter(final)
                 return
 

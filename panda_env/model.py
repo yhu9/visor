@@ -16,39 +16,10 @@ from torch.autograd import Variable
 
 from logger import Logger
 
-####################################################3
-
-#RESIDUAL BLOCKS
-class ResBlock(nn.Module):
-    def __init__(self, in_features, out_features,k=3):
-        super(ResBlock, self).__init__()
-
-        self.block = nn.Sequential(
-            nn.BatchNorm2d(in_features),
-            nn.ReLU(),
-            nn.Conv2d(in_features,out_features,k,stride=1,padding=1),
-            nn.BatchNorm2d(out_features),
-            nn.ReLU(),
-            nn.Conv2d(out_features,out_features,k,stride=1,padding=1)
-        )
-
-        if in_features == out_features:
-            self.skip = None
-        else:
-            self.skip = nn.Conv2d(in_features,out_features,1,1,0)
-
-    def forward(self, x):
-        if not self.skip:
-            x = self.block(x)
-        else:
-            x = self.block(x) + self.skip(x)
-        return x
-
 ##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward', 'done'))
 class ReplayMemory(object):
-
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
@@ -61,35 +32,30 @@ class ReplayMemory(object):
         self.memory[self.position] = Transition(*args)
         self.position = (self.position + 1) % self.capacity
 
-    def sample(self, batch_size):
+    def sample(self,batch_size,device='cpu'):
+        """Randomly sample a batch of experiences from memory."""
+        experiences = random.sample(self.memory, k=batch_size)
 
-        transitions = random.sample(self.memory,batch_size)
-        batch = Transition(*zip(*transitions))
+        frames = torch.from_numpy(np.stack([e.state for e in experiences])).float().to(device)
+        states = frames.permute(0,3,1,2)
+        actions = torch.from_numpy(np.vstack([e.action for e in experiences])).long().to(device)
+        rewards = torch.from_numpy(np.vstack([e.reward for e in experiences ])).float().to(device)
+        next_frames = torch.from_numpy(np.stack([e.next_state for e in experiences ])).float().to(device)
+        next_states = next_frames.permute(0,3,1,2)
+        #next_vparams = torch.from_numpy(np.stack([e.next_state[1] for e in experiences if e is not None])).float().to(device)
+        #next_states = next_frames,next_vparams
+        dones = torch.from_numpy(np.vstack([e.done for e in experiences ]).astype(np.uint8)).float().to(device)
 
-        curr_states = np.stack(batch.state)
-        actions = np.stack(batch.action).astype(np.int64)
-        next_states = np.stack(batch.next_state)
-        rewards = np.stack(batch.reward)
-        end = np.logical_not(np.stack(batch.done))
-
-        s1 = torch.Tensor(curr_states)
-        a1 = torch.from_numpy(actions)
-        r1 = torch.Tensor(rewards).unsqueeze(1)
-        s2 = torch.Tensor(next_states)
-        d = torch.Tensor(end).unsqueeze(1)
-
-        return s1,a1, r1, s2,d
+        return states, actions, rewards, next_states, dones
 
     def __len__(self):
         return len(self.memory)
 
-##########################################################
-#BASED ON PYTORCH EXAMPLE
 #ACTION NET WITH LIMITED ACTION SPACE
-class DQN(nn.Module):
+class DQN1(nn.Module):
 
     def __init__(self):
-        super(DQN,self).__init__()
+        super(DQN1,self).__init__()
 
         self.res18 = resnet.resnet18()
         self.m1 = nn.Sequential(
@@ -105,12 +71,51 @@ class DQN(nn.Module):
                 nn.Linear(1000,3)
                 )
 
-    def forward(self,x):
-        x = self.res18(x)
+    def forward(self,frame):
+        x = self.res18(frame)
         out1 = self.m1(x)
         out2 = self.m2(x)
         out3 = self.m3(x)
         return out1,out2,out3
+
+##########################################################
+#BASED ON PYTORCH EXAMPLE
+#ACTION NET WITH LIMITED ACTION SPACE
+class DQN(nn.Module):
+
+    def __init__(self):
+        super(DQN,self).__init__()
+
+        self.res18 = resnet.resnet18()
+        self.m1 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,35)
+                )
+        self.m2 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,15)
+                )
+        self.m3 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,35)
+                )
+        self.m4 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,15)
+                )
+        self.m5 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,10)
+                )
+
+    def forward(self,frame):
+        x = self.res18(frame)
+        out1 = self.m1(x)
+        out2 = self.m2(x)
+        out3 = self.m3(x)
+        out4 = self.m4(x)
+        out5 = self.m5(x)
+        return out1,out2,out3,out4,out5
 
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
@@ -125,7 +130,7 @@ class Model():
 
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
-        self.BATCH_SIZE = 32
+        self.BATCH_SIZE = 10
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -135,11 +140,9 @@ class Model():
         self.steps = 1
         self.memory = ReplayMemory(10000)
 
-        #EVALUATOR
-
         #OUR NETWORK
-        self.model= DQN()
-        self.target_net = DQN()
+        self.model= DQN1()
+        self.target_net = DQN1()
 
         #LOAD THE MODULES
         if load:
@@ -154,14 +157,21 @@ class Model():
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 
+    def load(self,model_dir):
+        self.model.load_state_dict(torch.load(model_dir))
+        self.target_net.load_state_dict(torch.load(model_dir))
+
     def optimize(self):
         #don't bother if you don't have enough in memory
         if len(self.memory) < self.BATCH_SIZE: return 0.0
+
+
         self.model.train()
         s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
 
         #get old Q values and new Q values for belmont eq
         qvals = self.model(s1)
+
 
         q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
         q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
@@ -175,7 +185,7 @@ class Model():
             q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
             q_target = torch.cat((q1_t,q2_t,q3_t),-1)
 
-        expected_state_action_values = (q_target * self.GAMMA) * d + r1
+        expected_state_action_values = (q_target * self.GAMMA) * (1-d) + r1
 
         #LOSS IS l2 loss of belmont equation
         loss = self.l2(state_action_values,expected_state_action_values)
@@ -194,6 +204,8 @@ class Model():
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
+        data = torch.from_numpy(np.ascontiguousarray(state)).float()
+        data = data.permute(2,0,1).unsqueeze(0)
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
         self.steps += 1
@@ -201,7 +213,7 @@ class Model():
         if sample > eps_threshold:
             with torch.no_grad():
                 #send the state through the DQN and get the index with the highest value for that state
-                a1,a2,a3 = self.model(state.unsqueeze(0))
+                a1,a2,a3 = self.model(data)
 
                 return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
         else:
@@ -218,7 +230,7 @@ class Model():
 
     def save(self):
         if not os.path.isdir('model'): os.mkdir('model')
-        torch.save(self.model.state_dict(),'model/DQN.pth')
+        torch.save(self.model.state_dict(),'model/DQN_1_6.pth')
 
 if __name__ == '__main__':
     #net = models.resnet14(pretrained=False,channels=6)

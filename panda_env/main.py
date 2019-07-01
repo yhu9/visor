@@ -63,6 +63,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         solved_deque.append(int(score > 0))
         scores_deque.append(score)
         score_average = np.mean(scores_deque)
+        solv_avg = np.mean(solved_deque)
         scores.append(score_average)
 
         #LOG THE SUMMARIES
@@ -73,12 +74,12 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             agent.target_net.load_state_dict(agent.model.state_dict())
 
         if i_episode % print_every == 0:
-            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}'\
-                  .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep), end="\n")
+            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}, Solv: {:.2f}'\
+                  .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep, solv_avg),end="\n")
 
-        if np.mean(solved_deque) >= best and len(solved_deque) >= 100:
+        if solv_avg >= best and len(solved_deque) >= 100:
             print('SAVED')
-            best = np.mean(solved_deque)
+            best = solv_avg
             agent.save()
 
 def test(directory, n_episodes=100, max_t=10, print_every=1):

@@ -418,7 +418,7 @@ class World(DirectObject):
     #and update the visor mask accordingly
     def step_1_6(self,actions,speed=1):
 
-        a1,a2,a3 = [a.item() for a in actions]
+        a1,a2,a3 = [a for a in actions]
 
         #action1 = move x y up down
         if a1 == 0: self.visorparam[0] += speed

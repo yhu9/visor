@@ -215,7 +215,7 @@ class Model():
                 #send the state through the DQN and get the index with the highest value for that state
                 a1,a2,a3 = self.model(data)
 
-                return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
+                return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
         else:
             return random.randrange(5), random.randrange(5),random.randrange(3)
 

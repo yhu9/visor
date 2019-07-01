@@ -217,7 +217,7 @@ class Model():
 
                 return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
         else:
-            return torch.tensor([[random.randrange(5)]],device=self.device,dtype=torch.long), torch.tensor([[random.randrange(5)]],device=self.device,dtype=torch.long),torch.tensor([[random.randrange(3)]],device=self.device,dtype=torch.long)
+            return random.randrange(5), random.randrange(5),random.randrange(3)
 
     #FORWARD PASS
     def forward(self,rgb):

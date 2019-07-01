@@ -32,7 +32,7 @@ class ReplayMemory(object):
             self.memory.append(None)
 
         state = torch.Tensor(state)
-        action = torch.cat(action).long()
+        action = torch.Tensor(action).long()
         next_state = torch.Tensor(next_state)
         reward = torch.Tensor([reward])
         done = torch.Tensor([done])
@@ -157,6 +157,8 @@ class Model():
         #OUR NETWORK
         self.model= DQN1()
         self.target_net = DQN1()
+        self.model.to(self.device)
+        self.target_net.to(self.device)
 
         #LOAD THE MODULES
         if load:
@@ -165,6 +167,7 @@ class Model():
         else:
             self.model.apply(init_weights)
             self.target_net.apply(init_weights)
+
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
         self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001,betas=(0.0,0.9))
@@ -218,19 +221,18 @@ class Model():
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
-        data = torch.from_numpy(np.ascontiguousarray(state)).float()
-        data = data.permute(2,0,1).unsqueeze(0)
-        sample = random.random()
-        eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
-        self.steps += 1
-
         with torch.no_grad():
+            sample = random.random()
+            eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
+            self.steps += 1
             if sample > eps_threshold:
-                    #send the state through the DQN and get the index with the highest value for that state
-                    a1,a2,a3 = self.model(data)
-                    return a1.max(1)[1].view(1), a2.max(1)[1].view(1),a3.max(1)[1].view(1)
+                data = torch.from_numpy(np.ascontiguousarray(state)).float().to(self.device)
+                data = data.permute(2,0,1).unsqueeze(0)
+                #send the state through the DQN and get the index with the highest value for that state
+                a1,a2,a3 = self.model(data)
+                return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
             else:
-                return torch.Tensor([random.randrange(5)]), torch.Tensor([random.randrange(5)]),torch.Tensor([random.randrange(3)])
+                return random.randrange(5), random.randrange(5),random.randrange(3)
 
     #FORWARD PASS
     def forward(self,rgb):

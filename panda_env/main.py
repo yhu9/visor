@@ -30,8 +30,9 @@ agent = Model()
 #TRAIN THE VISOR
 def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
 
-    #logger = Logger('./logs')
+    logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
+    solved_deque = deque(maxlen=100)
     scores= []
     best = 0
 
@@ -59,12 +60,13 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             if done:
                 break
 
+        solved_deque.append(int(score > 0))
         scores_deque.append(score)
         score_average = np.mean(scores_deque)
         scores.append(score_average)
 
         #LOG THE SUMMARIES
-        #logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
+        logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
 
         #update the value network
         if i_episode % save_every == 0:
@@ -74,10 +76,10 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}'\
                   .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep), end="\n")
 
-        if score_average >= best and len(scores_deque) == 20:
+        if np.mean(solved_deque) >= best and len(solved_deque) >= 100:
             print('SAVED')
-            best = score_average
-            #agent.save()
+            best = np.mean(solved_deque)
+            agent.save()
 
 def test(directory, n_episodes=100, max_t=10, print_every=1):
 

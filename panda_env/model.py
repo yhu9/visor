@@ -20,31 +20,45 @@ from logger import Logger
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward', 'done'))
 class ReplayMemory(object):
-    def __init__(self, capacity):
+    def __init__(self, capacity,device='cpu'):
         self.capacity = capacity
         self.memory = []
         self.position = 0
+        self.device=device
 
-    def push(self, *args):
+    def push(self, state,action,next_state,reward,done):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
-        self.memory[self.position] = Transition(*args)
+
+        state = torch.Tensor(state)
+        action = torch.cat(action).long()
+        next_state = torch.Tensor(next_state)
+        reward = torch.Tensor([reward])
+        done = torch.Tensor([done])
+        self.memory[self.position] = Transition(state,action,next_state,reward,done)
         self.position = (self.position + 1) % self.capacity
 
-    def sample(self,batch_size,device='cpu'):
+    def sample(self,batch_size):
         """Randomly sample a batch of experiences from memory."""
         experiences = random.sample(self.memory, k=batch_size)
+        s = [None] * batch_size
+        a = [None] * batch_size
+        r = [None] * batch_size
+        s2 = [None] * batch_size
+        d = [None] * batch_size
+        for i,e in enumerate(experiences):
+            s[i] = e.state
+            a[i] = e.action
+            r[i] = e.reward
+            s2[i] = e.next_state
+            d[i] = e.done
 
-        frames = torch.from_numpy(np.stack([e.state for e in experiences])).float().to(device)
-        states = frames.permute(0,3,1,2)
-        actions = torch.from_numpy(np.vstack([e.action for e in experiences])).long().to(device)
-        rewards = torch.from_numpy(np.vstack([e.reward for e in experiences ])).float().to(device)
-        next_frames = torch.from_numpy(np.stack([e.next_state for e in experiences ])).float().to(device)
-        next_states = next_frames.permute(0,3,1,2)
-        #next_vparams = torch.from_numpy(np.stack([e.next_state[1] for e in experiences if e is not None])).float().to(device)
-        #next_states = next_frames,next_vparams
-        dones = torch.from_numpy(np.vstack([e.done for e in experiences ]).astype(np.uint8)).float().to(device)
+        states = torch.stack(s).to(self.device).permute(0,3,1,2)
+        actions = torch.stack(a).to(self.device)
+        rewards = torch.stack(r).to(self.device)
+        next_states = torch.stack(s2).to(self.device).permute(0,3,1,2)
+        dones = torch.stack(d).to(self.device)
 
         return states, actions, rewards, next_states, dones
 
@@ -138,7 +152,7 @@ class Model():
         self.TARGET_UPDATE = 10
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
-        self.memory = ReplayMemory(10000)
+        self.memory = ReplayMemory(10000,device=self.device)
 
         #OUR NETWORK
         self.model= DQN1()
@@ -210,14 +224,13 @@ class Model():
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
         self.steps += 1
 
-        if sample > eps_threshold:
-            with torch.no_grad():
-                #send the state through the DQN and get the index with the highest value for that state
-                a1,a2,a3 = self.model(data)
-
-                return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
-        else:
-            return random.randrange(5), random.randrange(5),random.randrange(3)
+        with torch.no_grad():
+            if sample > eps_threshold:
+                    #send the state through the DQN and get the index with the highest value for that state
+                    a1,a2,a3 = self.model(data)
+                    return a1.max(1)[1].view(1), a2.max(1)[1].view(1),a3.max(1)[1].view(1)
+            else:
+                return torch.Tensor([random.randrange(5)]), torch.Tensor([random.randrange(5)]),torch.Tensor([random.randrange(3)])
 
     #FORWARD PASS
     def forward(self,rgb):

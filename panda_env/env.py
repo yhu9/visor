@@ -134,7 +134,7 @@ class World(DirectObject):
         reward = IOU + EYE
 
         #reward
-        if reward > 1.2:
+        if reward > 1.4:
             reward,flag = reward, True
         else:
             reward,flag = -0.1, False

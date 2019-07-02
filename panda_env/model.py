@@ -139,16 +139,13 @@ class Model():
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
                 torch.nn.init.xavier_uniform(m.weight.data)
 
-        #LOGGER FOR VISUALIZATION
-        #self.logger = Logger('./logs')
-
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 10
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
-        self.EPS_DECAY = 400
+        self.EPS_DECAY = 1000
         self.TARGET_UPDATE = 10
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
@@ -245,9 +242,9 @@ class Model():
 
         return actions
 
-    def save(self):
+    def save(self,outfile):
         if not os.path.isdir('model'): os.mkdir('model')
-        torch.save(self.model.state_dict(),'model/DQN_1_6.pth')
+        torch.save(self.model.state_dict(),os.path.join('model',outfile))
 
 if __name__ == '__main__':
     #net = models.resnet14(pretrained=False,channels=6)

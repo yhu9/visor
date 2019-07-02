@@ -15,6 +15,7 @@ from model import Model
 ################################################################################################
 parser = argparse.ArgumentParser()
 parser.add_argument('--load', type=str, default=False,help='model to load')
+parser.add_argument('--out',type=str, default='model/DQN.pth',help='output file')
 parser.add_argument('--test', action='store_const',const=True,default=False,help='testing flag')
 opt = parser.parse_args()
 ################################################################################################
@@ -80,7 +81,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         if solv_avg >= best and len(solved_deque) >= 100:
             print('SAVED')
             best = solv_avg
-            agent.save()
+            agent.save(opt.out)
 
 def test(directory, n_episodes=200, max_t=20, print_every=1):
 
@@ -88,6 +89,7 @@ def test(directory, n_episodes=200, max_t=20, print_every=1):
     agent.load(actor_path)
     scores_deque = deque(maxlen=20)
     scores = []
+    best_scores = []
 
     solved = 0.0
     avg_steps = 0.0
@@ -96,6 +98,7 @@ def test(directory, n_episodes=200, max_t=20, print_every=1):
         #RESET
         state = env.reset(manual_pose=i_episode)
         score = 0
+        best = -1
         timestep = time.time()
         for t in range(max_t):
             #take one step in the environment using the action
@@ -104,6 +107,8 @@ def test(directory, n_episodes=200, max_t=20, print_every=1):
 
             #get the reward for applying action on the prv state
             score += reward
+            if reward > best:
+                best = reward
 
             #store transition into memory (s,a,s_t+1,r)
             state = next_state
@@ -116,6 +121,8 @@ def test(directory, n_episodes=200, max_t=20, print_every=1):
 
         if solved > 0: avg_step = avg_steps / solved
         else: avg_step = 0
+
+        best_scores.append(best)
         scores_deque.append(score)
         scores.append(score)
         score_average = np.mean(scores_deque)
@@ -123,13 +130,24 @@ def test(directory, n_episodes=200, max_t=20, print_every=1):
             print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
                   .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
 
-    return scores
+    return scores,best_scores
 
 ##########################################################################
 
 if __name__ == '__main__':
     if opt.test:
-        scores = test(opt.load)
+        scores, best_scores = test(opt.load)
+        scores.sort()
+        best_scores.sort()
+
+        plt.plot(best_scores)
+        plt.ylabel('Highest Episode Reward')
+        plt.savefig('best_reward.png')
+        plt.clf()
+        plt.plot(scores)
+        plt.ylabel('Accumulated Reward')
+        plt.savefig('accum_reward.png')
+        plt.clf()
     else:
         scores = train()
 

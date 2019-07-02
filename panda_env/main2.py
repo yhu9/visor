@@ -44,7 +44,7 @@ def save_model():
     torch.save(agent.critic_local.state_dict(), 'model/checkpoint_critic.pth')
 
 def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
-    #logger = Logger('./logs')
+    logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
     solved_deque = deque(maxlen=100)
     scores = []
@@ -78,7 +78,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         solv_avg = np.mean(solved_deque)
         scores.append(score_average)
 
-        #logger.scalar_summary({'avg_reward': score_average, 'loss_actor': losses[0], 'loss_critic':losses[1]},i_episode)
+        logger.scalar_summary({'avg_reward': score_average, 'loss_actor': losses[0], 'loss_critic':losses[1]},i_episode)
         if i_episode % save_every == 0: agent.hard_update()
         if i_episode % print_every == 0:
             print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}, Solv: {:.2f}'\

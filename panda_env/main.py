@@ -82,7 +82,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             best = solv_avg
             agent.save()
 
-def test(directory, n_episodes=100, max_t=10, print_every=1):
+def test(directory, n_episodes=200, max_t=20, print_every=1):
 
     actor_path = os.path.join(directory,'DQN_1_6.pth')
     agent.load(actor_path)
@@ -92,14 +92,14 @@ def test(directory, n_episodes=100, max_t=10, print_every=1):
     solved = 0.0
     avg_steps = 0.0
 
-    for i_episode in range(1, n_episodes+1):
+    for i_episode in range(1, n_episodes):
         #RESET
-        state = env.reset()
+        state = env.reset(manual_pose=i_episode)
         score = 0
         timestep = time.time()
         for t in range(max_t):
             #take one step in the environment using the action
-            actions = agent.select_action(state)
+            actions = agent.select_greedy(state)
             next_state,reward,done = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state

@@ -216,8 +216,10 @@ class Model():
     #GREEDY ACTION SELECTION
     def select_greedy(self,state):
         with torch.no_grad():
-            a1,a2,a3 = self.model(state)
-            return a1.max(1)[1].view(1,1), a2.max(1)[1].view(1,1),a3.max(1)[1].view(1,1)
+            data = torch.from_numpy(np.ascontiguousarray(state)).float().to(self.device)
+            data = data.permute(2,0,1).unsqueeze(0)
+            a1,a2,a3 = self.model(data)
+            return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):

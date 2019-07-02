@@ -46,6 +46,7 @@ def save_model():
 def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
     #logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
+    solved_deque = deque(maxlen=100)
     scores = []
     best = 0
 
@@ -71,20 +72,23 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             if done:
                 break
 
+        solved_deque.append(int(score > 0))
         scores_deque.append(score)
         score_average = np.mean(scores_deque)
+        solv_avg = np.mean(solved_deque)
         scores.append(score_average)
 
         #logger.scalar_summary({'avg_reward': score_average, 'loss_actor': losses[0], 'loss_critic':losses[1]},i_episode)
         if i_episode % save_every == 0: agent.hard_update()
         if i_episode % print_every == 0:
-            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}'\
-                  .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep), end="\n")
+            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}, Solv: {:.2f}'\
+                  .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep, solv_avg),end="\n")
 
-        if score_average >= best and len(scores_deque) == 20:
-            best = score_average
+        if solv_avg >= best and len(solved_deque) >= 100:
+            print('SAVED')
+            best = solv_avg
             save_model()
-            print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(i_episode, score_average))
+
     return scores
 
 def test(directory, n_episodes=100, max_t=10, print_every=1):

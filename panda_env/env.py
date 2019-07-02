@@ -80,6 +80,9 @@ class World(DirectObject):
         self.action_high = np.array([35,15,35,15,3.14/2])
         print('Action high: ', self.action_high)
 
+        #number of steps taken
+        self.step_count = 0
+
         #initialize the scene
         self.init_scene()
         self.incrementCameraPosition(0)
@@ -155,10 +158,11 @@ class World(DirectObject):
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         thresh = IOU
 
-        if thresh > 0.25:
-            reward,flag = thresh * 10, True
+        flag = self.step_count >= 3
+        if thresh > 0.20:
+            reward= thresh
         else:
-            reward,flag = -1, True
+            reward= -0.1
 
         #shadow_mask = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(shadow_mask)
         #525 = 15 * 35 which is the area of the visor roughly
@@ -200,8 +204,10 @@ class World(DirectObject):
         return img / 255.0
 
     #RESET THE ENVIRONMENT
-    def reset(self):
-        poseid = random.randint(1,200)
+    def reset(self,manual_pose=False):
+        self.step_count = 1
+        if manual_pose: poseid = manual_pose
+        else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.light_angle = random.randint(-10,0)
@@ -417,6 +423,7 @@ class World(DirectObject):
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
     def step_1_6(self,actions,speed=1):
+        self.step_count += 1
 
         a1,a2,a3 = [a for a in actions]
 
@@ -467,6 +474,7 @@ class World(DirectObject):
 
 
     def step_discrete(self,actions,speed=1):
+        self.step_count += 1
 
         self.visorparam[0] = actions[0]
         self.visorparam[1] = actions[1]
@@ -502,6 +510,7 @@ class World(DirectObject):
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
     def step(self,actions,speed=1):
+        self.step_count += 1
 
         actions = (actions + 1) * (self.action_low + self.action_high) / 2
         self.visorparam = actions

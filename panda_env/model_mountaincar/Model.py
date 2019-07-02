@@ -26,7 +26,7 @@ class Actor(nn.Module):
         self.seed = torch.manual_seed(seed)
         self.residual = resnet.resnet18()
         self.fc_block = torch.nn.Sequential(
-                nn.Linear(1000+5,128),
+                nn.Linear(1000,128),
                 torch.nn.BatchNorm1d(128),
                 torch.nn.ReLU(),
                 nn.Linear(128,action_size),
@@ -36,10 +36,9 @@ class Actor(nn.Module):
     def reset_parameters(self):
         self.fc_block.apply(init_weights)
 
-    def forward(self, frame,visor):
+    def forward(self, frame):
         """Build an actor (policy) network that maps states -> actions."""
         x = self.residual(frame)
-        x = torch.cat((x,visor),1)
         return self.fc_block(x)
 
 class Critic(nn.Module):
@@ -59,7 +58,7 @@ class Critic(nn.Module):
         self.seed = torch.manual_seed(seed)
         self.residual = resnet.resnet18()
         self.fc_block = torch.nn.Sequential(
-                nn.Linear(1000+5+action_size,128),
+                nn.Linear(1000+action_size,128),
                 torch.nn.BatchNorm1d(128),
                 torch.nn.ReLU(),
                 nn.Linear(128,action_size)
@@ -69,10 +68,10 @@ class Critic(nn.Module):
     def reset_parameters(self):
         self.fc_block.apply(init_weights)
 
-    def forward(self, frame,visor, action):
+    def forward(self, frame, action):
         """Build a critic (value) network that maps (state, action) pairs -> Q-values."""
         xs = self.residual(frame)
-        x = torch.cat((xs,visor,action),1)
+        x = torch.cat((xs,action),1)
         return self.fc_block(x)
 
 

@@ -8,6 +8,7 @@ import argparse
 from itertools import count
 
 import torch
+import matplotlib.pyplot as plt
 
 #CUSTOM MODULES
 from env import World
@@ -46,7 +47,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_action(state)
-            next_state,reward,done = env.step_1_6(actions)
+            next_state,reward,done,_ = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state
             score += reward
@@ -100,24 +101,25 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
         score = 0
         best = -1
         timestep = time.time()
+        flag = True
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_greedy(state)
-            next_state,reward,done = env.step_1_6(actions)
+            next_state,reward,done,threshold = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state
             score += reward
-            if reward > best:
+            if threshold > best:
                 best = reward
 
             #store transition into memory (s,a,s_t+1,r)
             state = next_state
 
             #stopping condition
-            if done:
+            if done and flag:
+                flag = False
                 avg_steps += t+1
                 solved += 1
-                break
 
         if solved > 0: avg_step = avg_steps / solved
         else: avg_step = 0

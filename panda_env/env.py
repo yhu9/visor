@@ -131,18 +131,18 @@ class World(DirectObject):
 
         IOU = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(np.logical_or(eye_mask,shadow_mask))
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
-        reward = IOU + EYE
+        threshold = IOU + EYE
 
         #reward
-        if reward > 1.4:
-            reward,flag = reward, True
+        if threshold > 1.2:
+            reward,flag = threshold, True
         else:
-            reward,flag = -0.1, False
+            reward,flag = -0.1, self.step_count == 10
 
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
         self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,reward)
 
-        return reward,flag
+        return reward, flag, threshold
 
     #REWARD MAP GENERATION GIVEN STATE S
     def genRewardGT(self):
@@ -464,13 +464,13 @@ class World(DirectObject):
         cv2.waitKey(1)
 
         #get next state and reward
-        reward,done = self.genRewardGT2()
+        reward,done, info = self.genRewardGT2()
 
         #set the next state
         next_state = self.getstate(self.prv_frame,cur_frame)
         self.prv_frame = cur_frame.copy()
 
-        return next_state,reward,done
+        return next_state,reward,done, info
 
 
     def step_discrete(self,actions,speed=1):

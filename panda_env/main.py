@@ -110,7 +110,7 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
             #get the reward for applying action on the prv state
             score += reward
             if threshold > best:
-                best = reward
+                best = threshold
 
             #store transition into memory (s,a,s_t+1,r)
             state = next_state
@@ -141,15 +141,7 @@ if __name__ == '__main__':
         scores, best_scores = test(opt.load)
         scores.sort()
         best_scores.sort()
-
-        plt.plot(best_scores)
-        plt.ylabel('Highest Episode Reward')
-        plt.savefig('best_reward.png')
-        plt.clf()
-        plt.plot(scores)
-        plt.ylabel('Accumulated Reward')
-        plt.savefig('accum_reward.png')
-        plt.clf()
+        np.save(os.path.splitext(opt.load)[0]+ '_score.npy',best_scores)
     else:
         scores = train()
 

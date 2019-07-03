@@ -5,6 +5,7 @@ import os
 import numpy as np
 from collections import deque
 import argparse
+from itertools import count
 
 import torch
 
@@ -15,7 +16,7 @@ from model import Model
 ################################################################################################
 parser = argparse.ArgumentParser()
 parser.add_argument('--load', type=str, default=False,help='model to load')
-parser.add_argument('--out',type=str, default='model/DQN.pth',help='output file')
+parser.add_argument('--out',type=str, default='DQN.pth',help='output file')
 parser.add_argument('--test', action='store_const',const=True,default=False,help='testing flag')
 opt = parser.parse_args()
 ################################################################################################
@@ -37,7 +38,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
     scores= []
     best = 0
 
-    for i_episode in range(1,n_episodes+1):
+    for i_episode in count():
         state = env.reset()
         score = 0
         timestep = time.time()
@@ -83,10 +84,9 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             best = solv_avg
             agent.save(opt.out)
 
-def test(directory, n_episodes=200, max_t=20, print_every=1):
+def test(model_file, n_episodes=200, max_t=20, print_every=1):
 
-    actor_path = os.path.join(directory,'DQN_1_6.pth')
-    agent.load(actor_path)
+    agent.load(model_file)
     scores_deque = deque(maxlen=20)
     scores = []
     best_scores = []

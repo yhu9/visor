@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import time
 import os
 import numpy as np
@@ -33,26 +32,32 @@ agent = Model()
 #TRAIN THE VISOR
 def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
 
-    logger = Logger('./logs')
+    #logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
     solved_deque = deque(maxlen=100)
     scores= []
     best = 0
 
     for i_episode in count():
-        state = env.reset()
+        state = env.reset2()
         score = 0
         timestep = time.time()
 
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_action(state)
-            next_state,reward,done,_ = env.step_1_6(actions)
+            next_state,reward,done = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state
-            score += reward
 
             #store transition into memory (s,a,s_t+1,r)
+            sg1 = state.copy()
+            sg1[:,:,-1] = next_state[:,:,-1]
+            r2 = -1 * (2 - reward) * (2 - reward)
+            agent.memory.push(sg1,actions,next_state,reward,done)
+            if reward < 0.25: reward = -0.1
+            else: reward = 1
+            score += reward
             agent.memory.push(state,actions,next_state,reward,done)
             state = next_state
 
@@ -70,7 +75,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         scores.append(score_average)
 
         #LOG THE SUMMARIES
-        logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
+        #logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
 
         #update the value network
         if i_episode % save_every == 0:

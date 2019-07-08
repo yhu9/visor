@@ -36,7 +36,7 @@ class Actor(nn.Module):
     def reset_parameters(self):
         self.fc_block.apply(init_weights)
 
-    def forward(self, frame):
+    def forward(self,frame):
         """Build an actor (policy) network that maps states -> actions."""
         x = self.residual(frame)
         return self.fc_block(x)

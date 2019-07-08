@@ -158,20 +158,11 @@ class World(DirectObject):
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         thresh = IOU
 
-        flag = self.step_count >= 3
-        if thresh > 0.20:
-            reward= thresh
-        else:
-            reward= -0.1
 
-        #shadow_mask = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(shadow_mask)
-        #525 = 15 * 35 which is the area of the visor roughly
-        #params are the visor parameters (x,y,w,h,theta)
-        #A = (params[2] * params[3]) / np.sum(eye_mask)
-        #threshold = EYE + IOU
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
-        self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,reward)
-        return reward,flag
+        self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,thresh)
+
+        return thresh,eye_mask,shadow_mask
 
     #GET THE CURRENT FRAME AS NUMPY ARRAY
     def getFrame(self):
@@ -239,6 +230,46 @@ class World(DirectObject):
         state = frame
         return state
 
+    #RESET THE ENVIRONMENT
+    def reset2(self,manual_pose=False):
+        self.step_count = 1
+        if manual_pose: poseid = manual_pose
+        else: poseid = random.randint(1,200)
+        self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.light_angle = random.randint(-10,0)
+        self.incLightPos(0)                                         #PUT LIGHT IN RANDOM POSITION
+
+        #get image without shadow
+        self.shadowoff()
+        self.noshadow_img = self.getFrame_notex()
+
+        #init the visor to the same position always
+        self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
+
+        #APPLY VISOR MASK
+        self.shadowon()
+
+        #get the initial state as two copies of the first image
+        base.graphicsEngine.renderFrame()
+        self.prv_frame = self.getFrame()
+        cur_frame = self.prv_frame
+        h,w = cur_frame.shape[:2]
+        frame = np.zeros((h,w,7))
+
+        _,goal,_ = self.genRewardGT()
+        frame[:,:,:3] = self.prv_frame
+        frame[:,:,3:6] = cur_frame
+        frame[:,:,6] = goal.astype(np.float32)
+        state = frame
+
+        return state
+
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
 
@@ -292,7 +323,7 @@ class World(DirectObject):
         self.dennis.loop("head_movement")
         #CURRENTLY SHADOW QUALITY IS REDUCED DUE TO SHADOW ACNE
 
-        self.visor, self.hexes = self.genVisor()
+        self.visor, self.hexes = self.genVisor2()
         self.visor.reparentTo(self.dennis)
         self.visor.set_two_sided(True)
         self.visor.setPos(-3.75,.5,2.45)
@@ -345,8 +376,8 @@ class World(DirectObject):
             taskMgr.remove("random controller")
             for row in self.hexes:
                 for h in row:
-                    h.show(BitMask32.bit(1))
-            render.show(BitMask32.bit(1))
+                    h.show()
+            render.show()
         if (self.visorMode == 0):
             taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
             #taskMgr.add(self.randomVisor,"random controller")
@@ -357,16 +388,13 @@ class World(DirectObject):
         for _ in range(300):
             i = random.randint(0,len(self.hexes)-1)
             j = random.randint(0,len(self.hexes[-1]) - 1)
-            self.hexes[i][j].hide(BitMask32.bit(1))
+            self.hexes[i][j].hide()
 
         for _ in range(300):
             i = random.randint(0,len(self.hexes)-1)
             j = random.randint(0,len(self.hexes[-1]) - 1)
-            self.hexes[i][j].show(BitMask32.bit(1))
-
-        self.render1.show(BitMask32.bit(1))
-        self.render2.show(BitMask32.bit(1))
-
+            self.hexes[i][j].show()
+        render.show()
         return Task.again
 
     #SOME CONTROL SEQUENCES
@@ -394,28 +422,34 @@ class World(DirectObject):
         #APPLY VISOR MASK
         for i in range(len(self.hexes)):
             for j in range(len(self.hexes[-1])):
-                self.hexes[i][j].hide(BitMask32.bit(1))
-        self.render1.show(BitMask32.bit(1))
-        self.render2.show(BitMask32.bit(1))
+                self.hexes[i][j].hide()
 
     def shadowon(self):
         #APPLY VISOR MASK
         for i in range(len(self.hexes)):
             for j in range(len(self.hexes[-1])):
-                if self.visormask[j,i] == 1:
-                    self.hexes[i][j].show(BitMask32.bit(1))
+                if self.visormask[i,j] == 1:
+                    self.hexes[i][j].show()
                 else:
-                    self.hexes[i][j].hide(BitMask32.bit(1))
-        self.render1.show(BitMask32.bit(1))
-        self.render2.show(BitMask32.bit(1))
+                    self.hexes[i][j].hide()
 
-    #get state
     def getstate(self,prv_frame,cur_frame):
         h,w = cur_frame.shape[:2]
         d = 6
         frame = np.zeros((h,w,d))
         frame[:,:,:3] = prv_frame
         frame[:,:,3:] = cur_frame
+        state = frame
+        return state
+
+    #get state
+    def getstate2(self,prv_frame,cur_frame,goal):
+        h,w = cur_frame.shape[:2]
+        d = 7
+        frame = np.zeros((h,w,d))
+        frame[:,:,:3] = prv_frame
+        frame[:,:,3:6] = cur_frame
+        frame[:,:,6] = goal.astype(np.float32)
         #state = frame,self.visorparam
         state = frame
         return state
@@ -464,45 +498,11 @@ class World(DirectObject):
         cv2.waitKey(1)
 
         #get next state and reward
-        reward,done, info = self.genRewardGT2()
+        reward,eye_mask,shadow_mask = self.genRewardGT()
+        done = self.step_count >= 10 or reward > 0.25
 
         #set the next state
-        next_state = self.getstate(self.prv_frame,cur_frame)
-        self.prv_frame = cur_frame.copy()
-
-        return next_state,reward,done, info
-
-
-    def step_discrete(self,actions,speed=1):
-        self.step_count += 1
-
-        self.visorparam[0] = actions[0]
-        self.visorparam[1] = actions[1]
-        self.visorparam[2] = actions[2]
-        self.visorparam[3] = actions[3]
-        self.visorparam[4] = (pi * 0.5 / 10) * actions[0]
-
-        #get image with shadow after action
-        self.incLightPos(speed)
-        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
-        self.visormask *= 0
-        cv2.fillConvexPoly(self.visormask,box,(1))
-
-        #display the visor and show some data
-        self.shadowon()
-        cur_frame = self.getFrame()
-        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
-        cv2.waitKey(1)
-
-        #get next state and reward
-        reward,done = self.genRewardGT()
-
-        #set the next state
-        next_state = self.getstate(self.prv_frame,cur_frame)
+        next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)
         self.prv_frame = cur_frame.copy()
 
         return next_state,reward,done
@@ -536,13 +536,13 @@ class World(DirectObject):
         cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
-        #get next state and reward
-        reward, done = self.genRewardGT()
+        #get next state and reward and stopping flag
+        reward,eye_mask,shadow_mask = self.genRewardGT()
+        done = self.step_count >= 5 or reward > 1.2
 
         #set the next state
-        next_state = self.getstate(self.prv_frame,cur_frame)
+        next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)
         self.prv_frame = cur_frame.copy()
-
         return next_state,reward,done
 
     def spinLightTask(self,task):
@@ -567,7 +567,7 @@ class World(DirectObject):
     def incrementCameraPosition(self,n):
         self.cameraSelection = (self.cameraSelection + n) % 3
         if (self.cameraSelection == 1):
-            self.cam.setPos(-20,0,5)
+            self.cam.setPos(-7,0,3)
             self.cam.lookAt(0,0,0)
 
         if (self.cameraSelection == 0):
@@ -579,10 +579,11 @@ class World(DirectObject):
             self.cam.setPos(self.light.getPos())
             self.cam.lookAt(0,0,0)
 
+    #WILL BECOME DEPRECATED
     def genVisor(self,w=35,h=15):
         visor = self.render1.attach_new_node("visor")
         objects = [[None] * h for i in range(w)]
-        offsetx = (1.55) / 2.00
+        offsetx = (1.53) / 2.00
         offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
         x,y = 0,0
         for i in range(0,w):
@@ -605,12 +606,12 @@ class World(DirectObject):
         #x,y = 0,0
         for i in range(0,h):
             for j in range(0,w):
-                cx = offsetx + ((r + x) * j)
-                cy = offsety + (2*y*i) + (y*(j%2))
+                cx = offsety + (2*y*j) + (y*(i%2))
+                cy = offsetx + ((r + x) * i)
                 objects[i][j] = loader.loadModel("assets/hex/hexagon.egg")
                 objects[i][j].reparentTo(visor)
                 objects[i][j].setPos(cx, cy,5)
-                objects[i][j].setScale(1.1,1.1,1.1)
+                objects[i][j].setScale(1.0,1.0,1.0)
                 objects[i][j].setAlphaScale(0.01)
         return visor,objects
 

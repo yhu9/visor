@@ -116,7 +116,7 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
             state = next_state
 
             #stopping condition
-            if done and flag:
+            if threshold > 1.2 and flag:
                 flag = False
                 avg_steps += t+1
                 solved += 1

@@ -594,6 +594,26 @@ class World(DirectObject):
                 objects[i][j].setAlphaScale(0.01)
         return visor,objects
 
+    def genVisor2(self,w=35,h=15):
+        visor = self.render1.attach_new_node("visor")
+        objects = [[None] * w for i in range(h)]
+        r = 1.0
+        y = 0.866025
+        x = 0.5
+        offsetx = (1.55) / 2.00
+        offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
+        #x,y = 0,0
+        for i in range(0,h):
+            for j in range(0,w):
+                cx = offsetx + ((r + x) * j)
+                cy = offsety + (2*y*i) + (y*(j%2))
+                objects[i][j] = loader.loadModel("assets/hex/hexagon.egg")
+                objects[i][j].reparentTo(visor)
+                objects[i][j].setPos(cx, cy,5)
+                objects[i][j].setScale(1.1,1.1,1.1)
+                objects[i][j].setAlphaScale(0.01)
+        return visor,objects
+
 #################################################################################
 #################################################################################
 #################################################################################

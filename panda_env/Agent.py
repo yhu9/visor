@@ -60,7 +60,7 @@ class Agent():
         self.noise = OUNoise(action_size, random_seed, mu=0, theta=0.15, sigma=0.2)
 
         # Replay memory
-        self.memory = ReplayBuffer(BUFFER_SIZE)
+        self.memory = ReplayBuffer(BUFFER_SIZE,device=self.device)
 
         # Make sure target is with the same weight as the source
         self.hard_update()

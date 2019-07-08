@@ -35,7 +35,7 @@ def save_model(outfile=opt.out):
     torch.save(agent.critic_local.state_dict(), os.path.join('model',outfile + '_critic.pth'))
 
 def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
-    #logger = Logger('./logs')
+    logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
     solved_deque = deque(maxlen=100)
     scores = []
@@ -63,13 +63,13 @@ def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
             if done:
                 break
 
-        solved_deque.append(int(score > 0))
+        solved_deque.append(int(reward > 0.25))
         scores_deque.append(score)
         score_average = np.mean(scores_deque)
         solv_avg = np.mean(solved_deque)
         scores.append(score_average)
 
-        #logger.scalar_summary({'avg_reward': score_average, 'loss_actor': losses[0], 'loss_critic':losses[1]},i_episode)
+        logger.scalar_summary({'avg_reward': score_average, 'loss_actor': losses[0], 'loss_critic':losses[1]},i_episode)
         if i_episode % save_every == 0: agent.hard_update()
         if i_episode % print_every == 0:
             print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}, Solv: {:.2f}'\

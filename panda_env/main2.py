@@ -4,6 +4,7 @@ import os
 import numpy as np
 from collections import deque
 import argparse
+from itertools import count
 
 import torch
 import matplotlib.pyplot as plt
@@ -28,7 +29,7 @@ env = World()
 ############################################################################
 
 # size of each action
-agent = Agent(action_size=5, random_seed=int(time.time()))
+agent = Agent(action_size=5, random_seed=int(time.time()), load=opt.load)
 def save_model(outfile=opt.out):
     print("Model Save...")
     torch.save(agent.actor_local.state_dict(), os.path.join('model',outfile + '_actor.pth'))
@@ -41,7 +42,7 @@ def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
     scores = []
     best = 0
 
-    for i_episode in range(1, n_episodes+1):
+    for i_episode in count():
         #RESET
         state = env.reset2()
         agent.reset()
@@ -50,7 +51,6 @@ def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
         for t in range(max_t):
             actions = agent.act(state)
             next_state, reward, done = env.step(actions[0])
-
 
             #optimize the network
             losses = agent.step(state, actions, reward, next_state, done, t)
@@ -81,20 +81,16 @@ def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
 
     return scores
 
-def test(directory, n_episodes=100, max_t=10, print_every=1):
-
-    actor_path = os.path.join(directory,'checkpoint_actor.pth')
-    critic_path = os.path.join(directory,'checkpoint_critic.pth')
-    agent.load(actor_path,critic_path)
+def test(n_episodes=200, max_t=10, print_every=1):
     scores_deque = deque(maxlen=20)
     scores = []
 
     solved = 0.0
     avg_steps = 0.0
 
-    for i_episode in range(1, n_episodes+1):
+    for i_episode in range(1, n_episodes):
         #RESET
-        state = env.reset()
+        state = env.reset2(manual_pose=i_episode)
         score = 0
         timestep = time.time()
         for t in range(max_t):
@@ -120,7 +116,7 @@ def test(directory, n_episodes=100, max_t=10, print_every=1):
 if __name__ == '__main__':
 
     if opt.test:
-        scores = test(opt.load)
+        scores = test()
     else:
         scores = train()
 

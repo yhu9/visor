@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-BUFFER_SIZE = int(1e6)  # replay buffer size
+BUFFER_SIZE = int(1e5)  # replay buffer size
 TAU = 1e-3              # for soft update of target parameters
 LR_ACTOR = 1e-5         # learning rate of the actor
 LR_CRITIC = 1e-4        # learning rate of the critic
@@ -56,6 +56,12 @@ class Agent():
         self.critic_target = Critic( action_size, random_seed).to(self.device)
         self.critic_optimizer = optim.Adam(self.critic_local.parameters(), lr=LR_CRITIC, weight_decay=WEIGHT_DECAY)
 
+        if load:
+            idx = load.rfind('_')
+            actor_path = load[:idx] + '_actor.pth'
+            critic_path = load[:idx] +'_critic.pth'
+            self.load(actor_path,critic_path)
+
         # Noise process
         self.noise = OUNoise(action_size, random_seed, mu=0, theta=0.15, sigma=0.2)
 
@@ -78,9 +84,9 @@ class Agent():
 
         sg1 = state.copy()
         sg1[:,:,-1] = next_state[:,:,-1]
-        self.memory.push(sg1,action,reward,next_state.copy(),done)
-        if reward < 0.25: reward = -0.1
-        else: reward = 1
+        self.memory.push(sg1,action,reward - 1,next_state.copy(),done)
+        if reward < 0.25: reward = -1
+        else: reward += 1
         self.memory.push(state.copy(), action, reward, next_state.copy(), done)
         loss = 0.0,0.0
 
@@ -100,7 +106,7 @@ class Agent():
             sample = random.random()
             eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
             self.steps += 1
-            if sample > eps_threshold:
+            if sample > eps_threshold or not add_noise:
                 frame = torch.from_numpy(np.ascontiguousarray(state)).float()
                 frame = frame.permute(2,0,1).unsqueeze(0).to(self.device)
                 action = self.actor_local(frame)

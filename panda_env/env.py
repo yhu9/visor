@@ -538,7 +538,7 @@ class World(DirectObject):
 
         #get next state and reward and stopping flag
         reward,eye_mask,shadow_mask = self.genRewardGT()
-        done = self.step_count >= 5 or reward > 1.2
+        done = self.step_count >= 5 or reward > 0.20
 
         #set the next state
         next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)

@@ -26,7 +26,7 @@ opt = parser.parse_args()
 ################################################################################################
 from logger import Logger
 env = World()
-agent = Model()
+agent = Model(opt.load)
 
 ##########################################################################
 #TRAIN THE VISOR
@@ -49,13 +49,12 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             next_state,reward,done = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state
-
             #store transition into memory (s,a,s_t+1,r)
             sg1 = state.copy()
             sg1[:,:,-1] = next_state[:,:,-1]
-            r2 = -1 * (2 - reward) * (2 - reward)
-            agent.memory.push(sg1,actions,next_state,reward,done)
-            if reward < 0.25: reward = -0.1
+            r2 = reward - 1
+            agent.memory.push(sg1,actions,next_state,r2,done)
+            if reward < 0.25: reward = -1
             else: reward = 1
             score += reward
             agent.memory.push(state,actions,next_state,reward,done)
@@ -68,8 +67,8 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             if done:
                 break
 
-        solved_deque.append(int(score > 0))
-        scores_deque.append(score)
+        solved_deque.append(reward > 0)
+        scores_deque.append(reward)
         score_average = np.mean(scores_deque)
         solv_avg = np.mean(solved_deque)
         scores.append(score_average)
@@ -90,9 +89,8 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             best = solv_avg
             agent.save(opt.out)
 
-def test(model_file, n_episodes=200, max_t=20, print_every=1):
+def test(n_episodes=200, max_t=20, print_every=1):
 
-    agent.load(model_file)
     scores_deque = deque(maxlen=20)
     scores = []
     best_scores = []
@@ -102,7 +100,7 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
 
     for i_episode in range(1, n_episodes):
         #RESET
-        state = env.reset(manual_pose=i_episode)
+        state = env.reset2(manual_pose=i_episode)
         score = 0
         best = -1
         timestep = time.time()
@@ -110,18 +108,18 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_greedy(state)
-            next_state,reward,done,threshold = env.step_1_6(actions)
+            next_state,reward,done = env.step_1_6(actions)
 
             #get the reward for applying action on the prv state
             score += reward
-            if threshold > best:
-                best = threshold
+            if reward > best:
+                best =reward
 
             #store transition into memory (s,a,s_t+1,r)
             state = next_state
 
             #stopping condition
-            if threshold > 1.2 and flag:
+            if reward > 0.25 and flag:
                 flag = False
                 avg_steps += t+1
                 solved += 1
@@ -143,7 +141,7 @@ def test(model_file, n_episodes=200, max_t=20, print_every=1):
 
 if __name__ == '__main__':
     if opt.test:
-        scores, best_scores = test(opt.load)
+        scores, best_scores = test()
         scores.sort()
         best_scores.sort()
         np.save(os.path.splitext(opt.load)[0]+ '_score.npy',best_scores)

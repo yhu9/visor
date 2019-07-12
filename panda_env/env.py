@@ -245,7 +245,7 @@ class World(DirectObject):
         self.noshadow_img = self.getFrame_notex()
 
         #init the visor to the same position always
-        self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        #self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)

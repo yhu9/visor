@@ -20,7 +20,7 @@ WEIGHT_DECAY = 0        # L2 weight decay
 #EPSILON_MAX = 1.0
 #EPSILON_MIN = 0.1
 EPSILON_DECAY = 1e-3
-LEARN_START = 10
+LEARN_START =32
 UPDATE_EVERY = 1
 UPDATES_PER_STEP = 1
 
@@ -35,7 +35,7 @@ class Agent():
             action_size (int): dimension of each action
             random_seed (int): random seed
         """
-        self.BATCH_SIZE = 10          # minibatch size
+        self.BATCH_SIZE = 32          # minibatch size
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -82,12 +82,6 @@ class Agent():
         """Save experience in replay memory, and use random sample from buffer to learn."""
         # Save experience / reward
 
-        sg1 = state.copy()
-        sg1[:,:,-1] = next_state[:,:,-1]
-        self.memory.push(sg1,action,reward - 1,next_state.copy(),done)
-        if reward < 0.25: reward = -1
-        else: reward += 1
-        self.memory.push(state.copy(), action, reward, next_state.copy(), done)
         loss = 0.0,0.0
 
         # Learn, if enough samples are available in memory
@@ -191,11 +185,11 @@ class ReplayBuffer:
         self.memory = []
         self.device=device
         self.capacity = capacity
-        self.Transition = namedtuple("Experience",field_names = ["state","action","reward","next_state","done"])
+        self.Transition = namedtuple("Experience",field_names = ["state","action","next_state","reward","done"])
         self.seed = random.seed()
         self.position = 0
 
-    def push(self, state,action,reward,next_state,done):
+    def push(self, state,action,next_state,reward,done):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
@@ -204,7 +198,7 @@ class ReplayBuffer:
         next_state = torch.Tensor(next_state)
         reward = torch.Tensor([reward])
         done = torch.Tensor([done])
-        self.memory[self.position] = self.Transition(state,action,reward,next_state,done)
+        self.memory[self.position] = self.Transition(state,action,next_state,reward,done)
         self.position = (self.position + 1) % self.capacity
 
     def sample(self,batch_size):

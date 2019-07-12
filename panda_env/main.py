@@ -47,6 +47,7 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             #take one step in the environment using the action
             actions = agent.select_action(state)
             next_state,reward,done = env.step_1_6(actions)
+            score += reward
 
             #get the reward for applying action on the prv state
             #store transition into memory (s,a,s_t+1,r)
@@ -56,7 +57,6 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
             agent.memory.push(sg1,actions,next_state,r2,done)
             if reward < 0.25: reward = -1
             else: reward = 1
-            score += reward
             agent.memory.push(state,actions,next_state,reward,done)
             state = next_state
 

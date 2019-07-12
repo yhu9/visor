@@ -51,13 +51,18 @@ def train(n_episodes=20000, max_t=10, print_every=1, save_every=10):
         for t in range(max_t):
             actions = agent.act(state)
             next_state, reward, done = env.step(actions[0])
+            score += reward
 
             #optimize the network
+            sg1 = state.copy()
+            sg1[:,:,-1] = next_state[:,:,-1]
+            r2 = reward - 1
+            agent.memory.push(sg1,actions,next_state,r2,done)
+            if reward < 0.25: reward = -1
+            else: reward = 1
+            agent.memory.push(state, actions, next_state,reward,  done)
             losses = agent.step(state, actions, reward, next_state, done, t)
             state = next_state
-
-            #get the reward
-            score += reward
 
             #stopping condition
             if done:

@@ -26,14 +26,20 @@ class ReplayMemory(object):
         self.position = 0
         self.device=device
 
-    def push(self, state,action,next_state,reward,done):
+    def push(self,state,action,next_state,reward,done):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
 
-        state = torch.Tensor(state)
+        v,s = state
+        v2,s2 = next_state
+        v = torch.Tensor(v)
+        s = torch.Tensor(s)
+        state = (v,s)
+        v2 = torch.Tensor(v2)
+        s2 = torch.Tensor(s2)
+        next_state = (v2,s2)
         action = torch.Tensor(action).long()
-        next_state = torch.Tensor(next_state)
         reward = torch.Tensor([reward])
         done = torch.Tensor([done])
         self.memory[self.position] = Transition(state,action,next_state,reward,done)
@@ -42,59 +48,33 @@ class ReplayMemory(object):
     def sample(self,batch_size):
         """Randomly sample a batch of experiences from memory."""
         experiences = random.sample(self.memory, k=batch_size)
+        v = [None] * batch_size
         s = [None] * batch_size
         a = [None] * batch_size
         r = [None] * batch_size
+        v2 = [None] * batch_size
         s2 = [None] * batch_size
         d = [None] * batch_size
         for i,e in enumerate(experiences):
-            s[i] = e.state
+            v[i],s[i] = e.state
             a[i] = e.action
             r[i] = e.reward
-            s2[i] = e.next_state
+            v2[i],s2[i] = e.next_state
             d[i] = e.done
 
+        v = torch.stack(v).to(self.device)
         states = torch.stack(s).to(self.device).permute(0,3,1,2)
         actions = torch.stack(a).to(self.device)
         rewards = torch.stack(r).to(self.device)
+        v2 = torch.stack(v2).to(self.device)
         next_states = torch.stack(s2).to(self.device).permute(0,3,1,2)
         dones = torch.stack(d).to(self.device)
-
-        return states, actions, rewards, next_states, dones
+        return (v,states), actions, rewards, (v2,next_states), dones
 
     def __len__(self):
         return len(self.memory)
 
-#ACTION NET WITH LIMITED ACTION SPACE
-class DQN1(nn.Module):
-
-    def __init__(self):
-        super(DQN1,self).__init__()
-
-        self.res18 = resnet.resnet18()
-        self.m1 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,5)
-                )
-        self.m2 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,5)
-                )
-        self.m3 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,3)
-                )
-
-    def forward(self,frame):
-        x = self.res18(frame)
-        out1 = self.m1(x)
-        out2 = self.m2(x)
-        out3 = self.m3(x)
-        return out1,out2,out3
-
-##########################################################
-#BASED ON PYTORCH EXAMPLE
-#ACTION NET WITH LIMITED ACTION SPACE
+#DDPG with limited action space
 class DQN(nn.Module):
 
     def __init__(self):
@@ -103,33 +83,31 @@ class DQN(nn.Module):
         self.res18 = resnet.resnet18()
         self.m1 = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1000,35)
+                nn.Linear(1000+5,128),
+                nn.ReLU(),
+                nn.Linear(128,5)
                 )
         self.m2 = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1000,15)
+                nn.Linear(1000+5,128),
+                nn.ReLU(),
+                nn.Linear(128,5)
                 )
         self.m3 = nn.Sequential(
                 nn.ReLU(),
-                nn.Linear(1000,35)
-                )
-        self.m4 = nn.Sequential(
+                nn.Linear(1000+5,128),
                 nn.ReLU(),
-                nn.Linear(1000,15)
-                )
-        self.m5 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,10)
+                nn.Linear(128,3)
                 )
 
-    def forward(self,frame):
+    def forward(self,state):
+        v,frame = state
         x = self.res18(frame)
+        x = torch.cat((v,x),dim=-1)
         out1 = self.m1(x)
         out2 = self.m2(x)
         out3 = self.m3(x)
-        out4 = self.m4(x)
-        out5 = self.m5(x)
-        return out1,out2,out3,out4,out5
+        return out1,out2,out3
 
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
@@ -141,7 +119,7 @@ class Model():
 
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
-        self.BATCH_SIZE = 10
+        self.BATCH_SIZE = 16
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -152,8 +130,8 @@ class Model():
         self.memory = ReplayMemory(10000,device=self.device)
 
         #OUR NETWORK
-        self.model= DQN1()
-        self.target_net = DQN1()
+        self.model= DQN()
+        self.target_net = DQN()
         self.model.to(self.device)
         self.target_net.to(self.device)
 
@@ -178,7 +156,6 @@ class Model():
     def optimize(self):
         #don't bother if you don't have enough in memory
         if len(self.memory) < self.BATCH_SIZE: return 0.0
-
 
         self.model.train()
         s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
@@ -212,8 +189,11 @@ class Model():
     #GREEDY ACTION SELECTION
     def select_greedy(self,state):
         with torch.no_grad():
-            data = torch.from_numpy(np.ascontiguousarray(state)).float().to(self.device)
-            data = data.permute(2,0,1).unsqueeze(0)
+            v,s = state
+            frame = torch.from_numpy(np.ascontiguousarray(s)).float().to(self.device)
+            frame = frame.permute(2,0,1).unsqueeze(0)
+            v = torch.Tensor(v).unsqueeze(0)
+            data = (v,frame)
             a1,a2,a3 = self.model(data)
             return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
 
@@ -224,8 +204,11 @@ class Model():
             eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
             self.steps += 1
             if sample > eps_threshold:
-                data = torch.from_numpy(np.ascontiguousarray(state)).float().to(self.device)
-                data = data.permute(2,0,1).unsqueeze(0)
+                v,s = state
+                frame = torch.from_numpy(np.ascontiguousarray(s)).float().to(self.device)
+                frame = frame.permute(2,0,1).unsqueeze(0)
+                v = torch.Tensor(v).unsqueeze(0)
+                data = (v,frame)
                 #send the state through the DQN and get the index with the highest value for that state
                 a1,a2,a3 = self.model(data)
                 return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
@@ -245,11 +228,6 @@ class Model():
         if not os.path.isdir('model'): os.mkdir('model')
         torch.save(self.model.state_dict(),os.path.join('model',outfile))
 
-
-if __name__ == '__main__':
-    #net = models.resnet14(pretrained=False,channels=6)
-    #print(net.forward(torch.zeros((1,3,224,224))).shape)
-    print('hello world')
 
 
 

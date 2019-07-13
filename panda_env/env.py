@@ -354,7 +354,7 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-135,135)
+        self.light_angle = random.randint(-5,5)
         self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
@@ -362,7 +362,7 @@ class World(DirectObject):
         self.noshadow_img = self.getFrame_notex()
 
         #init the visor to the same position always
-        #self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
@@ -386,6 +386,46 @@ class World(DirectObject):
         state = frame
 
         return state
+
+    #RESET THE ENVIRONMENT
+    def reset2_4(self,manual_pose=False):
+        self.step_count = 1
+        if manual_pose: poseid = manual_pose
+        else: poseid = random.randint(1,200)
+        self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.light_angle = random.randint(-5,5)
+        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
+
+        #get image without shadow
+        self.shadowoff()
+        self.noshadow_img = self.getFrame_notex()
+
+        #init the visor to the same position always
+        self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
+
+        #APPLY VISOR MASK
+        self.shadowon()
+
+        #get the initial state as two copies of the first image
+        base.graphicsEngine.renderFrame()
+        self.prv_frame = self.getFrame()
+        cur_frame = self.prv_frame
+        h,w = cur_frame.shape[:2]
+        frame = np.zeros((h,w,7))
+
+        _,goal,_ = self.genRewardGT()
+        frame[:,:,:3] = self.prv_frame
+        frame[:,:,3:6] = cur_frame
+        frame[:,:,6] = goal.astype(np.float32)
+        state = frame
+
+        return self.visorparam, state
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
@@ -587,6 +627,60 @@ class World(DirectObject):
         #state = frame,self.visorparam
         state = frame
         return state
+
+    #take a possible of 10 actions to move x,y,w,h,r up or down
+    #and update the visor mask accordingly
+    def step2_4(self,actions,speed=1):
+        self.step_count += 1
+
+        a1,a2,a3 = [a for a in actions]
+        visor = self.visorparam
+
+        #action1 = move x y up down
+        if a1 == 0: self.visorparam[0] += speed
+        elif a1 == 1: self.visorparam[0] -= speed
+        elif a1 == 2: self.visorparam[1] += speed
+        elif a1 == 3: self.visorparam[1] -= speed
+
+        #action2 = inc h,w up down
+        if a2 == 0: self.visorparam[2] += speed
+        elif a2 == 1: self.visorparam[2] -= speed
+        elif a2 == 2: self.visorparam[3] += speed
+        elif a2 == 3: self.visorparam[3] -= speed
+
+        #action3 = inc theta up down
+        if a2 == 0: self.visorparam[4] += 5 * speed * pi / 180
+        elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
+
+        #get image with shadow after action
+        self.incLightPos()
+        self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
+        self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
+        self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
+        self.visorparam[3] = min(max(0,self.visorparam[3]),self.height-1)
+        self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])     #PADDED HEIGHT AND WIDTH OF 15PIXELS
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
+
+        self.shadowon()
+        cur_frame = self.getFrame()
+        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
+        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
+        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.waitKey(1)
+
+        #get next state and reward
+        reward,eye_mask,shadow_mask = self.genRewardGT()
+        done = self.step_count >= 10 or reward > 0.25
+
+        #set the next state
+        next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)
+        self.prv_frame = cur_frame.copy()
+
+        return visor,next_state,reward,done
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly

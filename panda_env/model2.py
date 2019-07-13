@@ -207,7 +207,7 @@ class Model():
                 v,s = state
                 frame = torch.from_numpy(np.ascontiguousarray(s)).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
-                v = torch.Tensor(v).unsqueeze(0)
+                v = torch.Tensor(v).unsqueeze(0).float().to(self.device)
                 data = (v,frame)
                 #send the state through the DQN and get the index with the highest value for that state
                 a1,a2,a3 = self.model(data)

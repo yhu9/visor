@@ -90,7 +90,7 @@ class World(DirectObject):
         self.incrementCameraPosition(0)
         self.addControls()
         self.reset()
-        self.getInfo()
+        #self.getInfo()
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
         taskMgr.doMethodLater(1.0,self.viewReward,"drawReward")
@@ -137,6 +137,7 @@ class World(DirectObject):
                 p = g.getPrimitive(j)
                 processPrim(p,vdata,data)
             data = np.array(data[:data.index(None)])
+            print(data.shape)
             data = data[:,:3]
             geoms.append((data,m))
         return geoms
@@ -394,7 +395,7 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-5,5)
+        self.light_angle = random.randint(-135,135)
         self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow

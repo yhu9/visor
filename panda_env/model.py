@@ -92,6 +92,34 @@ class DQN1(nn.Module):
         out3 = self.m3(x)
         return out1,out2,out3
 
+
+#DDPG with limited action space
+class DQN2(nn.Module):
+
+    def __init__(self):
+        super(DQN1,self).__init__()
+
+        self.res18 = resnet.resnet18()
+        self.m1 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,5)
+                )
+        self.m2 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,5)
+                )
+        self.m3 = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(1000,3)
+                )
+
+    def forward(self,frame):
+        x = self.res18(frame)
+        out1 = self.m1(x)
+        out2 = self.m2(x)
+        out3 = self.m3(x)
+        return out1,out2,out3
+
 ##########################################################
 #BASED ON PYTORCH EXAMPLE
 #ACTION NET WITH LIMITED ACTION SPACE
@@ -185,7 +213,6 @@ class Model():
 
         #get old Q values and new Q values for belmont eq
         qvals = self.model(s1)
-
 
         q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
         q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))

@@ -73,11 +73,13 @@ class World(DirectObject):
         base.camLens.setFov(60)
 
         # examine the state space
+        self.width = 73
+        self.height = 25
         self.state_size = (6,64,64)
         print('Size of state:', self.state_size)
         self.action_low = np.array([0,0,0,0,0])
         print('Action low:', self.action_low)
-        self.action_high = np.array([35,15,35,15,3.14/2])
+        self.action_high = np.array([self.width,self.height,self.width,self.height,3.14/2])
         print('Action high: ', self.action_high)
 
         #number of steps taken
@@ -88,13 +90,128 @@ class World(DirectObject):
         self.incrementCameraPosition(0)
         self.addControls()
         self.reset()
+        self.getInfo()
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
         taskMgr.doMethodLater(1.0,self.viewReward,"drawReward")
+        taskMgr.doMethodLater(.1,self.spinLightTask,"spinLight")
 
-    def viewReward(self,task):
-        self.genRewardGT()
-        return Task.again
+    ##########################################################
+    #CONVENIENCE FUNCTIONS
+    ##########################################################
+    def getInfo(self):
+        self.lpos = self.getLightData()
+        self.geompos = self.getVertexData()
+        self.visorpos = self.getVisorData()
+
+    def getVisorData(self):
+        data = [[None] * len(self.hexes[i]) for i in range(len(self.hexes))]
+        for i in range(len(self.hexes)):
+            for j in range(len(self.hexes[i])):
+                data[i][j] = self.hexes[i][j].getPos(self.render1)
+        return np.array(data)
+
+    def getLightData(self):
+        lpos = self.light.getPos(self.render1)
+        return np.array([lpos[0],lpos[1],lpos[2]])
+
+    def getVertexData(self):
+        def processPrim(prim,vertex,data):
+            for p in range(prim.getNumPrimitives()):
+                s = prim.getPrimitiveStart(p)
+                e = prim.getPrimitiveEnd(p)
+                for i in range(s,e):
+                    vi = prim.getVertex(i)
+                    vertex.setRow(vi)
+                    v = vertex.getData3f()
+                    data[vi] = [v[0],v[1],v[2],1]
+        geomNode = self.dennis2.getChild(0).getChild(0).node()
+        geoms = []
+        for i in range(geomNode.getNumGeoms()):
+            data = [None] * 100000
+            g = geomNode.getGeom(i)
+            s = geomNode.getGeomState(i)
+            m = s.getAttrib(MaterialAttrib).getMaterial()
+            vdata = GeomVertexReader(g.getVertexData(),'vertex')
+            for j in range(g.getNumPrimitives()):
+                p = g.getPrimitive(j)
+                processPrim(p,vdata,data)
+            data = np.array(data[:data.index(None)])
+            data = data[:,:3]
+            geoms.append((data,m))
+        return geoms
+
+    def calcVisor(self,task):
+        self.getInfo()
+        lvec = self.lpos
+        for geom,material in self.geompos:
+            color = material.getDiffuse()
+            if color[0] == 1 and color[1] == 0 and color[2] == 0: break
+
+        br = self.visorpos[0,0]
+        bl = self.visorpos[0,self.width-1]
+        tr = self.visorpos[self.height-1,0]
+        tl = self.visorpos[self.height-1,self.width-1]
+        v1 = tr - tl
+
+        #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
+        #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
+        ins = np.stack((tl[1:],tr[1:],bl[1:]))
+        out = np.array([[0,self.height-1],[self.width-1,self.height-1],[0,0]])
+        l = len(ins)
+        B = np.vstack([ins.transpose(),np.ones(l)])
+        D = 1.0 / np.linalg.det(B)
+        entry = lambda r,d: np.linalg.det(np.delete(np.vstack([r,B]),(d+1),axis=0))
+        M = [[(-1)**i * D * entry(R,i) for i in range(l)] for R in np.transpose(out)]
+        A, t = np.hsplit(np.array(M),[l-1])
+        t = np.transpose(t)[0]
+        v2 = bl - tl
+
+        #get intersection of eye verticies with visor plane along the light ray
+        nvec = np.cross(v2,v1)  #normal to the visor
+        d = np.dot(tl + -1 * geom,nvec) / np.dot(lvec,nvec)
+        intersection = geom + d[:,np.newaxis] * lvec
+
+        #(OPTIONAL VISUALIZATION)
+        img = np.zeros((500,500,3))
+        b1 = tl * 100 + 100
+        b2 = tr * 100 + 100
+        b3 = bl * 100 + 100
+        b4 = br * 100 + 100
+        vbox = np.array([b2[1:],b1[1:],b3[1:],b4[1:]])
+        vbox = np.int0(vbox)
+        cv2.fillConvexPoly(img,vbox,(255,255,255))
+        t1 = intersection[:,1:]
+        for p in t1:
+            pnt = (p * 100 + 100).astype(np.uint16)
+            cv2.circle(img,(pnt[0],pnt[1]),1,(0,255,0),-1)
+        cv2.imshow('img',img)
+        cv2.waitKey(1)
+
+        #get bounding box of the intersection points in 2d space collapsing the x axis
+        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why 100? cuz opencv can't handle floats
+        rect = cv2.minAreaRect(pnts.astype(np.int32))
+        pnt,dim,r = rect
+        x,y = pnt
+        w,h = dim
+        box = cv2.boxPoints(rect)   #tr,tl,bl,br
+
+        #TRANSFORM INTERSECTION WORLD COORD TO VISOR MASK
+        box = (box - 100000) / 100000
+        box = np.matmul(A,box.transpose()).transpose() + t
+        xpad = self.width // 10
+        ypad = self.height // 2.5
+        box += np.array([[xpad,-ypad],[-xpad,-ypad],[-xpad,ypad],[xpad,ypad]])
+        box = np.rint(box)
+        box[:,0] = -box[:,0] + self.width
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
+        self.shadowon()
+        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.waitKey(1)
+
+        return task.again
 
     def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,reward):
         h,w,d = rgb.shape
@@ -201,15 +318,15 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-10,0)
-        self.incLightPos(0)                                         #PUT LIGHT IN RANDOM POSITION
+        self.light_angle = random.randint(-135,135)
+        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
         self.shadowoff()
         self.noshadow_img = self.getFrame_notex()
 
         #init the visor to the same position always
-        self.visorparam = [17,7,15,10,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
@@ -237,8 +354,8 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-10,0)
-        self.incLightPos(0)                                         #PUT LIGHT IN RANDOM POSITION
+        self.light_angle = random.randint(-135,135)
+        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
         self.shadowoff()
@@ -329,7 +446,7 @@ class World(DirectObject):
         self.visor.setPos(-3.75,.5,2.45)
         self.visor.setH(-90)
         self.visor.setP(90)
-        self.visor.setScale(0.015,0.015,0.015)
+        self.visor.setScale(0.0071917,0.0071917,0.0071917)
 
         self.sun = DirectionalLight("Dlight")
         self.sun.color = self.sun.color * 5
@@ -361,28 +478,44 @@ class World(DirectObject):
         self.cameraSelection = 0
         self.lightSelection = 0
         self.visorMode = 0
-        self.visormask = np.zeros((15,35))
-        self.visorparam = [17,7,10,8,0]      #x,y,w,h,r
+        self.visormask = np.zeros((self.height,self.width))
+        self.visorparam = [self.width//2,self.height//2,self.width//3,self.height//3,0]      #x,y,w,h,r
         self.light.node().hideFrustum()
+
+    ##########################################################
+    #Controls
+    ##########################################################
 
     def putSunOnFace(self):
         self.lightSelection = 0
-        self.light.setPos(-20,0,5)
+        self.light.setPos(-15,0,3)
         self.light.lookAt(0,0,0)
 
     def toggleVisor(self,n):
-        self.visorMode = (self.visorMode + n) % 2
+        self.visorMode = (self.visorMode + n) % 3
+        if (self.visorMode == 0):
+            taskMgr.remove('random controller')
         if (self.visorMode == 1):
             taskMgr.remove("random controller")
+            taskMgr.doMethodLater(0.1,self.calcVisor,"calcVisor")
             for row in self.hexes:
                 for h in row:
                     h.show()
             render.show()
-        if (self.visorMode == 0):
+        if (self.visorMode == 2):
+            taskMgr.remove('calcVisor')
             taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
-            #taskMgr.add(self.randomVisor,"random controller")
+
     def recordScreen(self):
         base.movie(namePrefix='recording/frame',duration=5,fps=15)
+
+    ##########################################################
+    #TASKS
+    ##########################################################
+    def viewReward(self,task):
+        self.genRewardGT()
+        return Task.again
+
     def randomVisor(self,task):
 
         for _ in range(300):
@@ -394,6 +527,7 @@ class World(DirectObject):
             i = random.randint(0,len(self.hexes)-1)
             j = random.randint(0,len(self.hexes[-1]) - 1)
             self.hexes[i][j].show()
+
         render.show()
         return Task.again
 
@@ -407,7 +541,7 @@ class World(DirectObject):
         #addInstructions(0.36, 'v: View the Depth-Texture results')
         #addInstructions(0.42, 'tab : view buffer')
         self.accept('escape', self.exit)
-        self.accept("a", self.putSunOnFace)
+        #self.accept("a", self.putSunOnFace)
         self.accept("d", self.toggleVisor,[1])
         self.accept("r", self.recordScreen)
         self.accept("arrow_left", self.incrementCameraPosition, [-1])
@@ -478,11 +612,11 @@ class World(DirectObject):
         elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
 
         #get image with shadow after action
-        self.incLightPos(speed)
-        self.visorparam[0] = min(max(0,self.visorparam[0]),34)
-        self.visorparam[1] = min(max(0,self.visorparam[1]),14)
-        self.visorparam[2] = min(max(0,self.visorparam[2]),34)
-        self.visorparam[3] = min(max(0,self.visorparam[3]),14)
+        self.incLightPos()
+        self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
+        self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
+        self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
+        self.visorparam[3] = min(max(0,self.visorparam[3]),self.height-1)
         self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])     #PADDED HEIGHT AND WIDTH OF 15PIXELS
         box = cv2.boxPoints(rot_rect)
@@ -494,7 +628,7 @@ class World(DirectObject):
         cur_frame = self.getFrame()
         cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
         cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward
@@ -516,11 +650,11 @@ class World(DirectObject):
         self.visorparam = actions
 
         #get image with shadow after action
-        self.incLightPos(speed)
-        self.visorparam[0] = min(max(0,self.visorparam[0]),34)
-        self.visorparam[1] = min(max(0,self.visorparam[1]),14)
-        self.visorparam[2] = min(max(0,self.visorparam[2]),34)
-        self.visorparam[3] = min(max(0,self.visorparam[3]),14)
+        self.incLightPos()
+        self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
+        self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
+        self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
+        self.visorparam[3] = min(max(0,self.visorparam[3]),self.height-1)
         self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
@@ -533,7 +667,7 @@ class World(DirectObject):
         cur_frame = self.getFrame()
         cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
         cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (35*10,15*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward and stopping flag
@@ -546,19 +680,20 @@ class World(DirectObject):
         return next_state,reward,done
 
     def spinLightTask(self,task):
-        angleDegrees = (task.time * 5 - 90)
-        angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(20.0 * sin(angleRadians),20.0 * cos(angleRadians),10)
-        self.light.lookAt(0,0,0)
-
-        return task.cont
-
-    def incLightPos(self,speed):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
+        #self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
+        self.light.setPos(-15.0,10.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
-        self.light_angle = self.light_angle + speed
+        self.light_angle += 5
+        return task.again
+
+    def incLightPos(self,speed=2):
+        angleDegrees = (self.light_angle - 80)
+        angleRadians = angleDegrees * (pi / 180.0)
+        self.light.setPos(-15.0,10.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 4.0))
+        self.light.lookAt(0,0,0)
+        self.light_angle += speed
 
     def incCarPos(self,speed):
         self.car_x += (self.car_x + speed) % 180
@@ -579,33 +714,17 @@ class World(DirectObject):
             self.cam.setPos(self.light.getPos())
             self.cam.lookAt(0,0,0)
 
-    #WILL BECOME DEPRECATED
-    def genVisor(self,w=35,h=15):
+    def genVisor2(self):
         visor = self.render1.attach_new_node("visor")
-        objects = [[None] * h for i in range(w)]
-        offsetx = (1.53) / 2.00
-        offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
-        x,y = 0,0
-        for i in range(0,w):
-            for j in range(0,h):
-                objects[i][j] = loader.loadModel("assets/hex/hexagon.egg")
-                objects[i][j].reparentTo(visor)
-                objects[i][j].setPos((offsety * 2.0*i) + (offsety * (j % 2)), offsetx*2*j,5)
-                objects[i][j].setScale(1.1,1.1,1.1)
-                objects[i][j].setAlphaScale(0.01)
-        return visor,objects
-
-    def genVisor2(self,w=35,h=15):
-        visor = self.render1.attach_new_node("visor")
-        objects = [[None] * w for i in range(h)]
+        objects = [[None] * self.width for i in range(self.height)]
         r = 1.0
         y = 0.866025
         x = 0.5
         offsetx = (1.55) / 2.00
         offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
         #x,y = 0,0
-        for i in range(0,h):
-            for j in range(0,w):
+        for i in range(0,self.height):
+            for j in range(0,self.width):
                 cx = offsety + (2*y*j) + (y*(i%2))
                 cy = offsetx + ((r + x) * i)
                 objects[i][j] = loader.loadModel("assets/hex/hexagon.egg")

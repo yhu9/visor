@@ -73,8 +73,8 @@ class World(DirectObject):
         base.camLens.setFov(60)
 
         # examine the state space
-        self.width = 73
-        self.height = 25
+        self.width = 19
+        self.height = 9
         self.state_size = (6,64,64)
         print('Size of state:', self.state_size)
         self.action_low = np.array([0,0,0,0,0])
@@ -89,8 +89,8 @@ class World(DirectObject):
         self.init_scene()
         self.incrementCameraPosition(0)
         self.addControls()
-        self.reset()
-        #self.getInfo()
+        self.reset(manual_pose=1)
+        self.visorpos = self.getVisorData()
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
         taskMgr.doMethodLater(1.0,self.viewReward,"drawReward")
@@ -102,7 +102,6 @@ class World(DirectObject):
     def getInfo(self):
         self.lpos = self.getLightData()
         self.geompos = self.getVertexData()
-        self.visorpos = self.getVisorData()
 
     def getVisorData(self):
         data = [[None] * len(self.hexes[i]) for i in range(len(self.hexes))]
@@ -116,6 +115,7 @@ class World(DirectObject):
         return np.array([lpos[0],lpos[1],lpos[2]])
 
     def getVertexData(self):
+        self.dennis2.flattenLight()
         def processPrim(prim,vertex,data):
             for p in range(prim.getNumPrimitives()):
                 s = prim.getPrimitiveStart(p)
@@ -137,9 +137,18 @@ class World(DirectObject):
                 p = g.getPrimitive(j)
                 processPrim(p,vdata,data)
             data = np.array(data[:data.index(None)])
-            print(data.shape)
-            data = data[:,:3]
-            geoms.append((data,m))
+            #T = LMatrix4()
+            #a = geomNode.getTransform(render)
+            #print(a)
+            #quit()
+            #T = self.dennis2.getJoints(jointName='head')[-1].getTransform()
+            #T = np.array(T.getRows())
+            #data = np.matmul(data,T.transpose())
+            #print(data)
+            #print(T)
+            #quit()
+            geoms.append((data[:,:3],m))
+
         return geoms
 
     def calcVisor(self,task):
@@ -149,29 +158,40 @@ class World(DirectObject):
             color = material.getDiffuse()
             if color[0] == 1 and color[1] == 0 and color[2] == 0: break
 
-        br = self.visorpos[0,0]
-        bl = self.visorpos[0,self.width-1]
-        tr = self.visorpos[self.height-1,0]
-        tl = self.visorpos[self.height-1,self.width-1]
+        bl = self.visorpos[0,0]
+        br = self.visorpos[0,self.width-1]
+        tl = self.visorpos[self.height-1,0]
+        tr = self.visorpos[self.height-1,self.width-1]
         v1 = tr - tl
+        v2 = bl - tl
 
         #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
         #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
-        ins = np.stack((tl[1:],tr[1:],bl[1:]))
-        out = np.array([[0,self.height-1],[self.width-1,self.height-1],[0,0]])
-        l = len(ins)
-        B = np.vstack([ins.transpose(),np.ones(l)])
-        D = 1.0 / np.linalg.det(B)
-        entry = lambda r,d: np.linalg.det(np.delete(np.vstack([r,B]),(d+1),axis=0))
-        M = [[(-1)**i * D * entry(R,i) for i in range(l)] for R in np.transpose(out)]
-        A, t = np.hsplit(np.array(M),[l-1])
-        t = np.transpose(t)[0]
-        v2 = bl - tl
+        #ins = np.stack((tl[1:],bl[1:],tr[1:]))
+        #out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
+        #out = np.array([[0,self.height-1],[self.width-1,self.height-1],[0,0]])
+        #out = np.array([[0,0],[self.width-1,0],[0,self.height-1]])
+        #l = len(ins)
+        #B = np.vstack([ins.transpose(),np.ones(l)])
+        #D = 1.0 / np.linalg.det(B)
+        #entry = lambda r,d: np.linalg.det(np.delete(np.vstack([r,B]),(d+1),axis=0))
+        #M = [[(-1)**i * D * entry(R,i) for i in range(l)] for R in np.transpose(out)]
+        #A, t = np.hsplit(np.array(M),[l-1])
+        #t = np.transpose(t)[0]
+        tl = np.hstack((tl,[1]))
+        tr = np.hstack((tr,[1]))
+        bl = np.hstack((bl,[1]))
+        br = np.hstack((br,[1]))
+        ins = np.stack((tl[1:],bl[1:],tr[1:]))
+        out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
+        A = np.matmul(np.linalg.inv(ins),out)
 
         #get intersection of eye verticies with visor plane along the light ray
-        nvec = np.cross(v2,v1)  #normal to the visor
-        d = np.dot(tl + -1 * geom,nvec) / np.dot(lvec,nvec)
+        nvec = np.cross(v1,v2)  #normal to the visor
+        d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
+        #d = np.dot(tl + -1 * geom,nvec) / np.dot(lvec,nvec)
         intersection = geom + d[:,np.newaxis] * lvec
+        t1 = intersection[:,1:]
 
         #(OPTIONAL VISUALIZATION)
         img = np.zeros((500,500,3))
@@ -179,10 +199,10 @@ class World(DirectObject):
         b2 = tr * 100 + 100
         b3 = bl * 100 + 100
         b4 = br * 100 + 100
-        vbox = np.array([b2[1:],b1[1:],b3[1:],b4[1:]])
+        vbox = np.array([b2[1:-1],b1[1:-1],b3[1:-1],b4[1:-1]])
+        #vbox = np.array([b2[1:],b1[1:],b3[1:],b4[1:]])
         vbox = np.int0(vbox)
         cv2.fillConvexPoly(img,vbox,(255,255,255))
-        t1 = intersection[:,1:]
         for p in t1:
             pnt = (p * 100 + 100).astype(np.uint16)
             cv2.circle(img,(pnt[0],pnt[1]),1,(0,255,0),-1)
@@ -199,17 +219,21 @@ class World(DirectObject):
 
         #TRANSFORM INTERSECTION WORLD COORD TO VISOR MASK
         box = (box - 100000) / 100000
-        box = np.matmul(A,box.transpose()).transpose() + t
-        xpad = self.width // 10
-        ypad = self.height // 2.5
-        box += np.array([[xpad,-ypad],[-xpad,-ypad],[-xpad,ypad],[xpad,ypad]])
+        #box = np.matmul(A,box.transpose()).transpose() + t
+        box = np.hstack((box,np.ones((box.shape[0],1))))
+        box = np.matmul(box,A)
+        xpad = 2
+        ypad = 2
+        box = box[:,:2] + np.array([[xpad,-ypad],[-xpad,-ypad],[-xpad,ypad],[xpad,ypad]])
         box = np.rint(box)
         box[:,0] = -box[:,0] + self.width
+        box[:,0] -= 3
+        #box[:,1] += 4
         box = np.int0(box)
         self.visormask *= 0
         cv2.fillConvexPoly(self.visormask,box,(1))
         self.shadowon()
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         return task.again
@@ -275,7 +299,6 @@ class World(DirectObject):
         IOU = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(np.logical_or(eye_mask,shadow_mask))
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         thresh = IOU
-
 
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
         self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,thresh)
@@ -458,7 +481,7 @@ class World(DirectObject):
         self.cam.setPos(-10.8,0.0,5.25)
         self.cam.lookAt(-3,-0.2,2.69)
 
-        # Load the scene.
+        # Load the scene
         floorTex = loader.loadTexture('maps/envir-ground.jpg')
         cm = CardMaker('')
         cm.setFrame(-2, 2, -2, 2)
@@ -487,7 +510,7 @@ class World(DirectObject):
         self.visor.setPos(-3.75,.5,2.45)
         self.visor.setH(-90)
         self.visor.setP(90)
-        self.visor.setScale(0.0071917,0.0071917,0.0071917)
+        self.visor.setScale(0.025,0.025,0.025)
 
         self.sun = DirectionalLight("Dlight")
         self.sun.color = self.sun.color * 5
@@ -670,7 +693,7 @@ class World(DirectObject):
         cur_frame = self.getFrame()
         cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
         cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward
@@ -723,7 +746,7 @@ class World(DirectObject):
         cur_frame = self.getFrame()
         cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
         cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward
@@ -762,7 +785,7 @@ class World(DirectObject):
         cur_frame = self.getFrame()
         cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
         cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward and stopping flag
@@ -778,7 +801,7 @@ class World(DirectObject):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
         #self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
-        self.light.setPos(-15.0,10.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,3 + 7.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
@@ -786,7 +809,7 @@ class World(DirectObject):
     def incLightPos(self,speed=2):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,10.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,5 + 6.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

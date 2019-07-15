@@ -30,7 +30,6 @@ class ReplayMemory(object):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
-        print(len(self.memory))
 
         v,s = state
         v2,s2 = next_state

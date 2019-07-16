@@ -75,7 +75,7 @@ class World(DirectObject):
         # examine the state space
         self.width = 19
         self.height = 9
-        self.state_size = (6,64,64)
+        self.state_size = (7,64,64)
         print('Size of state:', self.state_size)
         self.action_low = np.array([0,0,0,0,0])
         print('Action low:', self.action_low)
@@ -93,7 +93,7 @@ class World(DirectObject):
         self.visorpos = self.getVisorData()
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
-        taskMgr.doMethodLater(1.0,self.viewReward,"drawReward")
+        taskMgr.doMethodLater(.1,self.viewReward,"drawReward")
         taskMgr.doMethodLater(.1,self.spinLightTask,"spinLight")
 
     ##########################################################
@@ -132,7 +132,7 @@ class World(DirectObject):
             g = geomNode.getGeom(i)
             s = geomNode.getGeomState(i)
             m = s.getAttrib(MaterialAttrib).getMaterial()
-            vdata = GeomVertexReader(g.getVertexData(),'vertex')
+            vdata = GeomVertexReader(g.getAnimatedVertexData(True,Thread.getCurrentThread()),'vertex')
             for j in range(g.getNumPrimitives()):
                 p = g.getPrimitive(j)
                 processPrim(p,vdata,data)
@@ -549,6 +549,40 @@ class World(DirectObject):
     ##########################################################
     #Controls
     ##########################################################
+    #SOME CONTROL SEQUENCES
+    def addControls(self):
+        #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
+        #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
+        #addInstructions(0.18, 'a : put sun on face')
+        #addInstructions(0.24, 's : toggleSun')
+        #addInstructions(0.30, 'd : toggle visor')
+        #addInstructions(0.36, 'v: View the Depth-Texture results')
+        #addInstructions(0.42, 'tab : view buffer')
+        self.anim_flag = False
+        self.accept('escape', self.exit)
+        #self.accept("a", self.putSunOnFace)
+        self.accept("d", self.toggleVisor,[1])
+        self.accept("r", self.recordScreen)
+        self.accept("arrow_left", self.incrementCameraPosition, [-1])
+        self.accept("arrow_right", self.incrementCameraPosition, [1])
+        self.accept("f12",base.screenshot,['recording/snapshot'])
+        self.accept("tab", base.bufferViewer.toggleEnable)
+        self.accept("p", self.addAnimation)
+
+    def exit(self):
+        quit()
+
+    def addAnimation(self):
+        self.anim_flag = not self.anim_flag
+        if self.anim_flag:
+            self.dennis.setPlayRate(0.5,'head_movement')
+            self.dennis.loop('head_movement')
+            self.dennis2.setPlayRate(0.5,'head_movement')
+            self.dennis2.loop('head_movement')
+        else:
+            self.dennis.stop('head_movement')
+            self.dennis2.stop('head_movement')
+
 
     def putSunOnFace(self):
         self.lightSelection = 0
@@ -595,26 +629,6 @@ class World(DirectObject):
         render.show()
         return Task.again
 
-    #SOME CONTROL SEQUENCES
-    def addControls(self):
-        #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
-        #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
-        #addInstructions(0.18, 'a : put sun on face')
-        #addInstructions(0.24, 's : toggleSun')
-        #addInstructions(0.30, 'd : toggle visor')
-        #addInstructions(0.36, 'v: View the Depth-Texture results')
-        #addInstructions(0.42, 'tab : view buffer')
-        self.accept('escape', self.exit)
-        #self.accept("a", self.putSunOnFace)
-        self.accept("d", self.toggleVisor,[1])
-        self.accept("r", self.recordScreen)
-        self.accept("arrow_left", self.incrementCameraPosition, [-1])
-        self.accept("arrow_right", self.incrementCameraPosition, [1])
-        self.accept("f12",base.screenshot,['recording/snapshot'])
-        self.accept("tab", base.bufferViewer.toggleEnable)
-
-    def exit(self):
-        quit()
 
     def shadowoff(self):
         #APPLY VISOR MASK
@@ -648,7 +662,6 @@ class World(DirectObject):
         frame[:,:,:3] = prv_frame
         frame[:,:,3:6] = cur_frame
         frame[:,:,6] = goal.astype(np.float32)
-        #state = frame,self.visorparam
         state = frame
         return state
 
@@ -801,7 +814,7 @@ class World(DirectObject):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
         #self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
-        self.light.setPos(-15.0,3 + 7.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
@@ -809,7 +822,7 @@ class World(DirectObject):
     def incLightPos(self,speed=2):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,5 + 6.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 2.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

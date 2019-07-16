@@ -115,11 +115,11 @@ class Model():
 
         def init_weights(m):
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
-                torch.nn.init.xavier_uniform(m.weight.data)
+                torch.nn.init.xavier_uniform_(m.weight.data)
 
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
-        self.BATCH_SIZE = 16
+        self.BATCH_SIZE = 10
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -144,15 +144,10 @@ class Model():
             self.model.apply(init_weights)
             self.target_net.apply(init_weights)
 
-
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
         self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001,betas=(0.0,0.9))
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
-
-    def load(self,model_dir):
-        self.model.load_state_dict(torch.load(model_dir))
-        self.target_net.load_state_dict(torch.load(model_dir))
 
     def optimize(self):
         #don't bother if you don't have enough in memory
@@ -200,30 +195,20 @@ class Model():
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
+        self.model.eval()
         with torch.no_grad():
             sample = random.random()
             eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
             self.steps += 1
             if sample > eps_threshold:
-                v,s = state
-                frame = torch.from_numpy(np.ascontiguousarray(s)).float().to(self.device)
+                frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
-                v = torch.Tensor(v).unsqueeze(0).float().to(self.device)
-                data = (v,frame)
+                v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
                 #send the state through the DQN and get the index with the highest value for that state
-                a1,a2,a3 = self.model(data)
+                a1,a2,a3 = self.model((v,frame))
                 return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
             else:
                 return random.randrange(5), random.randrange(5),random.randrange(3)
-
-    #FORWARD PASS
-    def forward(self,rgb):
-        x = torch.from_numpy(np.ascontiguousarray(rgb)).float()
-        x = x.permute(2,0,1)
-        x = x.unsqueeze(0)
-        actions = self.net(x)
-
-        return actions
 
     def save(self,outfile):
         if not os.path.isdir('model'): os.mkdir('model')

@@ -232,15 +232,6 @@ class Model():
             else:
                 return random.randrange(5), random.randrange(5),random.randrange(3)
 
-    #FORWARD PASS
-    def forward(self,rgb):
-        x = torch.from_numpy(np.ascontiguousarray(rgb)).float()
-        x = x.permute(2,0,1)
-        x = x.unsqueeze(0)
-        actions = self.net(x)
-
-        return actions
-
     def save(self,outfile):
         if not os.path.isdir('model'): os.mkdir('model')
         torch.save(self.model.state_dict(),os.path.join('model',outfile))

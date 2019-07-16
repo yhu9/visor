@@ -5,6 +5,7 @@ import numpy as np
 from collections import deque
 import argparse
 from itertools import count
+import gc
 
 import torch
 import matplotlib.pyplot as plt
@@ -30,7 +31,7 @@ agent = Model(opt.load)
 
 ##########################################################################
 #TRAIN THE VISOR
-def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
+def train(n_episodes=1000000, max_t=10, print_every=1, save_every=10):
 
     logger = Logger('./logs')
     scores_deque = deque(maxlen=20)
@@ -42,7 +43,6 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
         state = env.reset2_4()
         score = 0
         timestep = time.time()
-
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_action(state)
@@ -52,11 +52,10 @@ def train(n_episodes=10000, max_t=10, print_every=1, save_every=10):
 
             #get the reward for applying action on the prv state
             #store transition into memory (s,a,s_t+1,r)
-            v,s = state
-            sg1 = s.copy()
+            sg1 = state[1].copy()
             sg1[:,:,-1] = s2[:,:,-1]
             r2 = reward - 1
-            agent.memory.push((v,sg1),actions,next_state,r2,done)
+            agent.memory.push((visor,sg1),actions,next_state,r2,done)
             if reward < 0.25: reward = -1
             else: reward = 1
             agent.memory.push(state,actions,next_state,reward,done)

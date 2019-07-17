@@ -176,6 +176,7 @@ class Model():
         self.steps = 1
         self.memory = ReplayMemory(10000,device=self.device)
 
+        print(self.device)
         #OUR NETWORK
         if mode == 'DQN':
             self.model= DQN()
@@ -239,7 +240,7 @@ class Model():
             v,s = state
             frame = torch.from_numpy(np.ascontiguousarray(s)).float().to(self.device)
             frame = frame.permute(2,0,1).unsqueeze(0)
-            v = torch.Tensor(v).unsqueeze(0)
+            v = torch.Tensor(v).unsqueeze(0).to(self.device)
             data = (v,frame)
             a1,a2,a3 = self.model(data)
             return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()

@@ -109,15 +109,13 @@ def test(n_episodes=200, max_t=20, print_every=1):
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_greedy(state)
-            next_state,reward,done = env.step_1_6(actions)
+            visor,s2,reward,done = env.step2_4(actions)
+            next_state = (visor,s2)
 
             #get the reward for applying action on the prv state
             score += reward
             if reward > best:
                 best =reward
-
-            #store transition into memory (s,a,s_t+1,r)
-            state = next_state
 
             #stopping condition
             if reward > 0.25 and flag:

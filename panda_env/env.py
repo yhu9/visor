@@ -507,10 +507,10 @@ class World(DirectObject):
         self.visor, self.hexes = self.genVisor2()
         self.visor.reparentTo(self.dennis)
         self.visor.set_two_sided(True)
-        self.visor.setPos(-3.75,.5,2.45)
+        self.visor.setPos(-3.75,.5,2.5)
         self.visor.setH(-90)
         self.visor.setP(90)
-        self.visor.setScale(0.025,0.025,0.025)
+        self.visor.setScale(0.027,0.027,0.027)
 
         self.sun = DirectionalLight("Dlight")
         self.sun.color = self.sun.color * 5
@@ -814,7 +814,7 @@ class World(DirectObject):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
         #self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),3 + 2 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
@@ -822,7 +822,7 @@ class World(DirectObject):
     def incLightPos(self,speed=2):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),3 + (random.random() + 2) * cos(angleRadians * 2.0))
+        self.light.setPos(-15.0,-2 + 3.0 * cos(angleRadians),2 + (random.random()) * cos(angleRadians * 2.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

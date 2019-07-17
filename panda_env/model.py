@@ -65,6 +65,7 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
+
 #ACTION NET WITH LIMITED ACTION SPACE
 class DQN1(nn.Module):
 
@@ -92,45 +93,8 @@ class DQN1(nn.Module):
         out3 = self.m3(x)
         return out1,out2,out3
 
+
 ##########################################################
-#BASED ON PYTORCH EXAMPLE
-#ACTION NET WITH LIMITED ACTION SPACE
-class DQN(nn.Module):
-
-    def __init__(self):
-        super(DQN,self).__init__()
-
-        self.res18 = resnet.resnet18()
-        self.m1 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,35)
-                )
-        self.m2 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,15)
-                )
-        self.m3 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,35)
-                )
-        self.m4 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,15)
-                )
-        self.m5 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000,10)
-                )
-
-    def forward(self,frame):
-        x = self.res18(frame)
-        out1 = self.m1(x)
-        out2 = self.m2(x)
-        out3 = self.m3(x)
-        out4 = self.m4(x)
-        out5 = self.m5(x)
-        return out1,out2,out3,out4,out5
-
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
     def __init__(self,load=False):

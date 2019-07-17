@@ -6,7 +6,6 @@ from collections import namedtuple, deque
 
 from model_mountaincar.Model import Actor, Critic
 from model_mountaincar.Noise import OUNoise
-from model import DQN
 
 import torch
 import torch.nn.functional as F

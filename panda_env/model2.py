@@ -74,6 +74,53 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
+#DDQN network
+class DDQN(nn.Module):
+    def __init__(self):
+        super(DDQN,self).__init__()
+
+        self.res18 = resnet.resnet18()
+        self.h1 = nn.Linear(1005,256)
+
+        self.value = nn.Sequential(
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,1)
+                )
+
+        self.action1 = nn.Sequential(
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,5)
+                )
+        self.action2 = nn.Sequential(
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,5)
+                )
+        self.action3 = nn.Sequential(
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,3)
+                )
+
+    def forward(self,state):
+        v,frame = state
+        x = self.res18(frame)
+        x = torch.cat((v,x),dim=-1)
+        x = self.h1(x)
+        v = self.value(x)
+        a1 = self.action1(x)
+        a2 = self.action2(x)
+        a3 = self.action3(x)
+        q1 = v + (a1 - torch.mean(a1))
+        q2 = v + (a2 - torch.mean(a1))
+        q3 = v + (a3 - torch.mean(a1))
+        return q1,q2,q3
+
 #DDPG with limited action space
 class DQN(nn.Module):
 
@@ -111,7 +158,7 @@ class DQN(nn.Module):
 
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
-    def __init__(self,load=False):
+    def __init__(self,load=False,mode='DQN'):
 
         def init_weights(m):
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
@@ -130,8 +177,12 @@ class Model():
         self.memory = ReplayMemory(10000,device=self.device)
 
         #OUR NETWORK
-        self.model= DQN()
-        self.target_net = DQN()
+        if mode == 'DQN':
+            self.model= DQN()
+            self.target_net = DQN()
+        elif mode == 'DDQN':
+            self.model= DQN()
+            self.target_net = DQN()
         self.model.to(self.device)
         self.target_net.to(self.device)
 

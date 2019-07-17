@@ -690,7 +690,7 @@ class World(DirectObject):
         elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
 
         #get image with shadow after action
-        self.incLightPos()
+        #self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -743,7 +743,7 @@ class World(DirectObject):
         elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
 
         #get image with shadow after action
-        self.incLightPos()
+        #self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -781,7 +781,7 @@ class World(DirectObject):
         self.visorparam = actions
 
         #get image with shadow after action
-        self.incLightPos()
+        #self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -813,8 +813,7 @@ class World(DirectObject):
     def spinLightTask(self,task):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        #self.light.setPos(15.0 * sin(angleRadians),15.0 * cos(angleRadians),3)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
@@ -822,7 +821,7 @@ class World(DirectObject):
     def incLightPos(self,speed=2):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,-2 + 3.0 * cos(angleRadians),2 + (random.random()) * cos(angleRadians * 2.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

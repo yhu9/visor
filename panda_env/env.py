@@ -704,14 +704,14 @@ class World(DirectObject):
 
         self.shadowon()
         cur_frame = self.getFrame()
-        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
+        #cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
+        #cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         #get next state and reward
         reward,eye_mask,shadow_mask = self.genRewardGT()
-        done = self.step_count >= 10 or reward > 0.25
+        done = self.step_count >= 10 or reward > 0.25 or self.visormask[2] <= 2 or self.visormask[3] <= 2
 
         #set the next state
         next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)

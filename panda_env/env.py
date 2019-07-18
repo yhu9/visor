@@ -690,7 +690,7 @@ class World(DirectObject):
         elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
 
         #get image with shadow after action
-        #self.incLightPos()
+        self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -711,7 +711,7 @@ class World(DirectObject):
 
         #get next state and reward
         reward,eye_mask,shadow_mask = self.genRewardGT()
-        done = self.step_count >= 10 or reward > 0.25 or self.visorparam[2] < 2 or self.visorparam[3] < 2
+        done = self.step_count >= 10 or reward > 0.25
 
         #set the next state
         next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)

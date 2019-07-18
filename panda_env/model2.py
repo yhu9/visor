@@ -13,7 +13,6 @@ import torch.nn.functional as F
 import resnet
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
-
 from logger import Logger
 
 ##########################################################
@@ -92,20 +91,13 @@ class DDQN(nn.Module):
                 nn.Linear(256,1)
                 )
 
-        self.action1 = nn.Sequential(
+        self.action = nn.Sequential(
                 nn.BatchNorm1d(256),
                 nn.ReLU(),
-                nn.Linear(256,5)
-                )
-        self.action2 = nn.Sequential(
+                nn.Linear(256,256),
                 nn.BatchNorm1d(256),
                 nn.ReLU(),
-                nn.Linear(256,5)
-                )
-        self.action3 = nn.Sequential(
-                nn.BatchNorm1d(256),
-                nn.ReLU(),
-                nn.Linear(256,3)
+                nn.Linear(256,75)
                 )
 
     def forward(self,state):
@@ -114,13 +106,9 @@ class DDQN(nn.Module):
         x = torch.cat((v,x),dim=-1)
         x = self.h1(x)
         v = self.value(x)
-        a1 = self.action1(x)
-        a2 = self.action2(x)
-        a3 = self.action3(x)
-        q1 = v + (a1 - torch.mean(a1))
-        q2 = v + (a2 - torch.mean(a1))
-        q3 = v + (a3 - torch.mean(a1))
-        return q1,q2,q3
+        a1 = self.action(x)
+        q = v + (a1 - torch.mean(a1))
+        return q
 
 #DDPG with limited action space
 class DQN(nn.Module):
@@ -129,33 +117,22 @@ class DQN(nn.Module):
         super(DQN,self).__init__()
 
         self.res18 = resnet.resnet18()
-        self.m1 = nn.Sequential(
+        self.action = nn.Sequential(
+                nn.Linear(1000+5,256),
+                nn.BatchNorm1d(256),
                 nn.ReLU(),
-                nn.Linear(1000+5,128),
+                nn.Linear(256,256),
+                nn.BatchNorm1d(256),
                 nn.ReLU(),
-                nn.Linear(128,5)
-                )
-        self.m2 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000+5,128),
-                nn.ReLU(),
-                nn.Linear(128,5)
-                )
-        self.m3 = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(1000+5,128),
-                nn.ReLU(),
-                nn.Linear(128,3)
+                nn.Linear(256,75)
                 )
 
     def forward(self,state):
         v,frame = state
         x = self.res18(frame)
         x = torch.cat((v,x),dim=-1)
-        out1 = self.m1(x)
-        out2 = self.m2(x)
-        out3 = self.m3(x)
-        return out1,out2,out3
+        a = self.action(x)
+        return a
 
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
@@ -175,7 +152,7 @@ class Model():
         self.TARGET_UPDATE = 10
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
-        self.memory = ReplayMemory(100,device=self.device)
+        self.memory = ReplayMemory(10000,device=self.device)
 
         print(self.device)
         #OUR NETWORK
@@ -183,8 +160,8 @@ class Model():
             self.model= DQN()
             self.target_net = DQN()
         elif mode == 'DDQN':
-            self.model= DQN()
-            self.target_net = DQN()
+            self.model= DDQN()
+            self.target_net = DDQN()
         self.model.to(self.device)
         self.target_net.to(self.device)
 
@@ -210,19 +187,19 @@ class Model():
         s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
 
         #get old Q values and new Q values for belmont eq
-        qvals = self.model(s1)
+        state_action_values = self.model(s1)
 
-        q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
-        q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
-        q3 = qvals[2].gather(1,actions[:,2].unsqueeze(1))
-        state_action_values = torch.cat((q1,q2,q3),-1)
+        #q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
+        #q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
+        #q3 = qvals[2].gather(1,actions[:,2].unsqueeze(1))
+        #state_action_values = torch.cat((q1,q2,q3),-1)
 
         with torch.no_grad():
-            qvals_t = self.target_net(s2)
-            q1_t = qvals_t[0].max(1)[0].unsqueeze(1)
-            q2_t = qvals_t[1].max(1)[0].unsqueeze(1)
-            q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
-            q_target = torch.cat((q1_t,q2_t,q3_t),-1)
+            q_target = self.target_net(s2)
+            #q1_t = qvals_t[0].max(1)[0].unsqueeze(1)
+            #q2_t = qvals_t[1].max(1)[0].unsqueeze(1)
+            #q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
+            #q_target = torch.cat((q1_t,q2_t,q3_t),-1)
 
         expected_state_action_values = (q_target * self.GAMMA) * (1-d) + r1
 
@@ -253,13 +230,16 @@ class Model():
             sample = random.random()
             eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
             self.steps += 1
-            if sample > eps_threshold:
+            #if sample > eps_threshold:
+            if True:
                 frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
                 v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
                 #send the state through the DQN and get the index with the highest value for that state
-                a1,a2,a3 = self.model((v,frame))
-                return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
+                a = self.model((v,frame))
+                idx = a.max(1)[1].item()
+                a1,a2,a3 = np.where(np.arange(75).reshape((5,5,3)) == idx)
+                return a1[0], a2[0],a3[0]
             else:
                 return random.randrange(5), random.randrange(5),random.randrange(3)
 

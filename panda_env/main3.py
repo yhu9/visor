@@ -34,13 +34,13 @@ agent = Model(opt.load,mode='DDQN')
 def train(n_episodes=1000000, max_t=10, print_every=1, save_every=10):
 
     logger = Logger('./logs')
-    scores_deque = deque(maxlen=20)
-    solved_deque = deque(maxlen=100)
+    scores_deque = deque(maxlen=200)
+    solved_deque = deque(maxlen=200)
     scores= []
     best = 0
 
     for i_episode in count():
-        state = env.reset2_4()
+        state = env.reset2_4(manual_pose=(i_episode % 200) + 1)
         score = 0
         timestep = time.time()
         for t in range(max_t):
@@ -56,8 +56,8 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=10):
             sg1[:,:,-1] = s2[:,:,-1]
             r2 = reward - 1
             agent.memory.push((visor,sg1),actions,next_state,r2,done)
-            if reward < 0.25: reward = -1
-            else: reward = 1
+            if reward < 0.25: reward = reward -1
+            else: reward = 1 + reward
             agent.memory.push(state,actions,next_state,reward,done)
             state = next_state
 
@@ -123,6 +123,7 @@ def test(n_episodes=200, max_t=20, print_every=1):
                 flag = False
                 avg_steps += t+1
                 solved += 1
+                break
 
         if solved > 0: avg_step = avg_steps / solved
         else: avg_step = 0
@@ -134,7 +135,6 @@ def test(n_episodes=200, max_t=20, print_every=1):
         if i_episode % print_every == 0:
             print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
                   .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
-
     return scores,best_scores
 
 ##########################################################################

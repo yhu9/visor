@@ -48,6 +48,7 @@ class ReplayMemory(object):
     def sample(self,batch_size):
         """Randomly sample a batch of experiences from memory."""
         experiences = random.sample(self.memory, k=batch_size)
+        #experiences = self.memory[-batch_size:]
         v = [None] * batch_size
         s = [None] * batch_size
         a = [None] * batch_size

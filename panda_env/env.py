@@ -418,15 +418,15 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-135,135)
-        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
+        #self.light_angle = random.randint(-135,135)
+        #self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
         self.shadowoff()
         self.noshadow_img = self.getFrame_notex()
 
         #init the visor to the same position always
-        self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        #self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
         rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
         box = cv2.boxPoints(rot_rect)
         box = np.int0(box)
@@ -819,8 +819,7 @@ class World(DirectObject):
         return task.again
 
     def incLightPos(self,speed=2):
-        angleDegrees = (self.light_angle - 80)
-        angleRadians = angleDegrees * (pi / 180.0)
+        angleRadians = self.light_angle * (pi / 180.0)
         self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed

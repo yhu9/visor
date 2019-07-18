@@ -33,7 +33,7 @@ agent = Model(opt.load,mode='DDQN')
 #TRAIN THE VISOR
 def train(n_episodes=1000000, max_t=10, print_every=1, save_every=10):
 
-    #logger = Logger('./logs')
+    logger = Logger('./logs')
     scores_deque = deque(maxlen=200)
     solved_deque = deque(maxlen=200)
     scores= []
@@ -75,7 +75,7 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=10):
         scores.append(score_average)
 
         #LOG THE SUMMARIES
-        #logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
+        logger.scalar_summary({'avg_reward': score_average, 'loss': loss},i_episode)
 
         #update the value network
         if i_episode % save_every == 0:

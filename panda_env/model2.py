@@ -230,8 +230,7 @@ class Model():
             sample = random.random()
             eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1 * self.steps / self.EPS_DECAY)
             self.steps += 1
-            #if sample > eps_threshold:
-            if True:
+            if sample > eps_threshold:
                 frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
                 v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)

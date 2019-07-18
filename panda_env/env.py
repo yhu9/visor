@@ -378,7 +378,7 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-5,5)
+        self.light_angle = random.randint(-135,135)
         self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get image without shadow
@@ -711,7 +711,7 @@ class World(DirectObject):
 
         #get next state and reward
         reward,eye_mask,shadow_mask = self.genRewardGT()
-        done = self.step_count >= 10 or reward > 0.25 or self.visormask[2] <= 2 or self.visormask[3] <= 2
+        done = self.step_count >= 10 or reward > 0.25
 
         #set the next state
         next_state = self.getstate2(self.prv_frame,cur_frame,shadow_mask)

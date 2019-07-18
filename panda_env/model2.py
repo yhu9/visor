@@ -167,7 +167,7 @@ class Model():
 
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
-        self.BATCH_SIZE = 10
+        self.BATCH_SIZE = 32
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -175,7 +175,7 @@ class Model():
         self.TARGET_UPDATE = 10
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
-        self.memory = ReplayMemory(10000,device=self.device)
+        self.memory = ReplayMemory(100,device=self.device)
 
         print(self.device)
         #OUR NETWORK

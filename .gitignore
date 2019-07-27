@@ -7,5 +7,4 @@ panda_env/recording
 panda_env/model
 panda_env/log
 *.pyc
-*models/*
-*log/*
+*/log

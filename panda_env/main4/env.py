@@ -306,7 +306,7 @@ class World(DirectObject):
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
         self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,thresh)
 
-        return thresh,eye_mask,shadow_mask, eye_and_shadow
+        return thresh,eye_mask,shadow_mask
 
     #GET THE CURRENT FRAME AS NUMPY ARRAY
     def getFrame(self):
@@ -320,7 +320,7 @@ class World(DirectObject):
         img = img[:,:,:3]
         img = img[::-1]
         img = img[159:601,150:503,:]        #boundry based on range of head motion
-        img = cv2.resize(img,(128,128))
+        img = cv2.resize(img,(64,64))
         return img / 255.0
 
     #GET THE CURRENT FRAME AS NUMPY ARRAY
@@ -335,7 +335,7 @@ class World(DirectObject):
         img = img[:,:,:3]
         img = img[::-1]
         img = img[159:601,150:503,:]        #boundry based on range of head motion
-        img = cv2.resize(img,(128,128))
+        img = cv2.resize(img,(64,64))
         return img / 255.0
 
     #RESET THE ENVIRONMENT
@@ -385,7 +385,7 @@ class World(DirectObject):
         self.incLightPos(speed=2)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get current situation
-        _,eye_mask,shadow_mask, eye_and_shadow = self.genRewardGT()
+        _,eye_mask,shadow_mask = self.genRewardGT()
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         if EYE <= 0.5:
             self.visorparam = [self.width //2, self.height //2, 19,9,0]
@@ -407,7 +407,7 @@ class World(DirectObject):
         frame = self.getFrame()
 
         self.imgstates = deque(maxlen=2)
-        mask = np.dstack((eye_mask,shadow_mask,eye_and_shadow)).astype(np.float32)
+        mask = np.dstack((eye_mask,shadow_mask)).astype(np.float32)
         for i in range(2): self.imgstates.append(frame.copy().astype(np.float32))
 
         frame = self.getstate2(mask)
@@ -620,11 +620,11 @@ class World(DirectObject):
     #get state
     def getstate2(self,mask):
         h,w = self.imgstates[0].shape[:2]
-        d = len(self.imgstates) * 3 + 3
+        d = len(self.imgstates) * 3 + 2
         frame = np.zeros((h,w,d))
         frame[:,:,:3] = self.imgstates[0]
         frame[:,:,3:6] = self.imgstates[1]
-        frame[:,:,6:9] = mask
+        frame[:,:,6:8] = mask
 
         return frame
 
@@ -661,19 +661,19 @@ class World(DirectObject):
         cv2.waitKey(1)
 
         #get next state
-        reward,eye_mask,shadow_mask, eye_and_shadow = self.genRewardGT()
-        mask = np.dstack((eye_mask,shadow_mask,eye_and_shadow))
+        reward,eye_mask,shadow_mask = self.genRewardGT()
+        mask = np.dstack((eye_mask,shadow_mask))
         self.imgstates.append(cur_frame.astype(np.float32))
 
         #get the reward
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         done = self.step_count >= 10 or reward > 0.25 or self.visorparam[2] <= 2 or self.visorparam[3] <= 2 or EYE < 0.5
-        if self.visorparam[2] <= 2 or self.visorparam[3] <= 2 or EYE < 0.5:
+        if self.visorparam[2] <= 2 or self.visorparam[3] <=2 or EYE < 0.5:
             r1 = -1
             r2 = -1
         elif reward < 0.25:
             r1 = reward - 1
-            r2 = reward - 1
+            r2 = 0
         else:
             r1 = reward - 1
             r2 = 1 + reward

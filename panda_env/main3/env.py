@@ -686,8 +686,8 @@ class World(DirectObject):
             r1 = reward - 1
             r2 = 0
         else:
-            r1 = 1 + reward
-            r2 = 1 + reward
+            r1 = reward - 1
+            r2 = reward + 1
 
 
         #set the next state

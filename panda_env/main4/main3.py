@@ -41,7 +41,6 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
 
     for i_episode in count():
         state = env.reset2_4(manual_pose=(i_episode % 200) + 1)
-        #goal = state[1][:,:,-1]
         score = 0
         timestep = time.time()
         for t in range(max_t):
@@ -52,7 +51,9 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
             score += r2
 
             #store HER transition into memory (s,a,s_t+1,r)
-            #agent.memory.push((visor,state[1].copy()),actions,next_state,r1,done)
+            sg1 = state[1].copy()
+            sg1[:,:,-1] = s2[:,:,-1]
+            agent.memory.push((visor,sg1),actions,next_state,r1,done)
 
             #push state and goal to memory
             agent.memory.push(state,actions,next_state,r2,done)

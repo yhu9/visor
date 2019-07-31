@@ -675,7 +675,7 @@ class World(DirectObject):
             r1 = reward - 1
             r2 = 0
         else:
-            r1 = reward - 1
+            r1 = reward + 1
             r2 = 1 + reward
 
 

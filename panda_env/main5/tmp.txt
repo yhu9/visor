@@ -1,0 +1,8 @@
+baseline:       64x64 resolution
+                2 frames + mask of current frame
+                HER(S,A,G) = -1, 0, 1 + IOU
+                HER(S,A,G*) = -1, IOU - 1
+
+log0 - original with her and higher resolution
+log1 - original without her
+log2 - orginal with her and -1 reward for bad states:   73% acc 2.86 steps

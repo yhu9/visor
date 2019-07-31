@@ -46,22 +46,17 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_action(state)
-            visor,s2,reward,done = env.step2_4(actions)
+            visor,s2,r1,r2,done = env.step2_4(actions)
             next_state = (visor,s2)
-            score += reward
+            score += r2
 
-            #get the reward for applying action on the prv state
-            #store transition into memory (s,a,s_t+1,r)
+            #store HER transition into memory (s,a,s_t+1,r)
             sg1 = state[1].copy()
             sg1[:,:,-1] = s2[:,:,-1]
-            r2 = reward - 1
-            agent.memory.push((visor,sg1),actions,next_state,r2,done)
-            if reward < 0.25 and not done: reward = 0
-            elif reward >= 0.25: reward = 1 + reward
-            elif done: reward = -1.0
+            agent.memory.push((visor,sg1),actions,next_state,r1,done)
 
-            #normalize reward bewteen -1,1 with center at 0.25
-            agent.memory.push(state,actions,next_state,reward,done)
+            #push state and goal to memory
+            agent.memory.push(state,actions,next_state,r2,done)
             state = next_state
 
             #optimize the network using memory
@@ -71,8 +66,8 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
             if done:
                 break
 
-        solved_deque.append(reward > 0)
-        scores_deque.append(reward)
+        solved_deque.append(done and r2 > 0)
+        scores_deque.append(r2)
         score_average = np.mean(scores_deque)
         solv_avg = np.mean(solved_deque)
         scores.append(score_average)
@@ -112,19 +107,19 @@ def test(n_episodes=200, max_t=20, print_every=1):
         for t in range(max_t):
             #take one step in the environment using the action
             actions = agent.select_greedy(state)
-            visor, s2 ,reward,done = env.step2_4(actions)
+            visor, s2 ,r1,r2 ,done = env.step2_4(actions)
             next_state = (visor,s2)
             state = next_state
 
             #get the reward for applying action on the prv state
-            score += reward
+            score += r2
             #stopping condition
-            if reward > 0.25:
+            if r2> 0.25:
                 avg_steps += t+1
                 solved += 1
 
-            if reward > best:
-                best =reward
+            if r2 > best:
+                best =r2
 
             if done: break
 

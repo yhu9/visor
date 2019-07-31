@@ -2,6 +2,7 @@
 import random
 from math import pi, sin, cos,sqrt
 import numpy as np
+from collections import deque
 
 #CUSTOM MODULES
 from utils import ShadowDetector
@@ -294,16 +295,18 @@ class World(DirectObject):
 
         eye_mask = self.lmfunc.get_eyesGT(noshadow)     #((cx,cy),(h,w),rotation)
         shadow_mask = self.shadowfunc.get_shadowgt(shadow)
+        eye_and_shadow = np.logical_and(eye_mask,shadow_mask)
+        eye_or_shadow = np.logical_or(eye_mask,shadow_mask)
         lm = np.zeros((5,2)).astype(np.uint8)
 
-        IOU = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(np.logical_or(eye_mask,shadow_mask))
-        EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
+        IOU = np.sum(eye_and_shadow) / np.sum(eye_or_shadow)
+        EYE = np.sum(eye_and_shadow) / np.sum(eye_mask)
         thresh = IOU
 
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
         self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,thresh)
 
-        return thresh,eye_mask,shadow_mask
+        return thresh,eye_mask,shadow_mask, eye_and_shadow
 
     #GET THE CURRENT FRAME AS NUMPY ARRAY
     def getFrame(self):
@@ -372,47 +375,6 @@ class World(DirectObject):
         return state
 
     #RESET THE ENVIRONMENT
-    def reset2(self,manual_pose=False):
-        self.step_count = 1
-        if manual_pose: poseid = manual_pose
-        else: poseid = random.randint(1,200)
-        self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.light_angle = random.randint(-10,0)
-        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
-
-        #get image without shadow
-        self.shadowoff()
-        self.noshadow_img = self.getFrame_notex()
-
-        #init the visor to the same position always
-        #self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
-        self.visorparam = [self.width//2,self.height//2,self.width,self.height,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
-        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
-        self.visormask *= 0
-        cv2.fillConvexPoly(self.visormask,box,(1))
-
-        #APPLY VISOR MASK
-        self.shadowon()
-
-        #get the initial state as two copies of the first image
-        base.graphicsEngine.renderFrame()
-        self.prv_frame = self.getFrame()
-        cur_frame = self.prv_frame
-        h,w = cur_frame.shape[:2]
-        frame = np.zeros((h,w,7))
-
-        _,goal,_ = self.genRewardGT()
-        frame[:,:,:3] = self.prv_frame
-        frame[:,:,3:6] = cur_frame
-        frame[:,:,6] = goal.astype(np.float32)
-        state = frame
-
-        return state
-
-    #RESET THE ENVIRONMENT
     def reset2_4(self,manual_pose=False):
         self.step_count = 1
         if manual_pose: poseid = manual_pose
@@ -423,7 +385,7 @@ class World(DirectObject):
         self.incLightPos(speed=2)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get current situation
-        _,eye_mask,shadow_mask = self.genRewardGT()
+        _,eye_mask,shadow_mask, eye_and_shadow = self.genRewardGT()
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         if EYE <= 0.5:
             self.visorparam = [self.width //2, self.height //2, 19,9,0]
@@ -442,18 +404,15 @@ class World(DirectObject):
 
         #get the initial state as two copies of the first image
         base.graphicsEngine.renderFrame()
-        self.prv_frame = self.getFrame()
-        cur_frame = self.prv_frame
-        h,w = cur_frame.shape[:2]
-        frame = np.zeros((h,w,8))
+        frame = self.getFrame()
 
-        frame[:,:,:3] = self.prv_frame
-        frame[:,:,3:6] = cur_frame
-        frame[:,:,6] = eye_mask.astype(np.float32)
-        frame[:,:,7] = shadow_mask.astype(np.float32)
-        state = frame
+        self.imgstates = deque(maxlen=2)
+        mask = np.dstack((eye_mask,shadow_mask)).astype(np.float32)
+        for i in range(2): self.imgstates.append(frame.copy().astype(np.float32))
 
-        return np.array(self.visorparam) / 19.0, state
+        frame = self.getstate3(mask)
+
+        return np.array(self.visorparam) / 19.0, frame
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
@@ -659,16 +618,25 @@ class World(DirectObject):
         return state
 
     #get state
-    def getstate2(self,prv_frame,cur_frame,eye_mask,shadow_mask):
-        h,w = cur_frame.shape[:2]
-        d = 8
+    def getstate2(self,mask):
+        h,w = self.imgstates[0].shape[:2]
+        d = len(self.imgstates) * 3 + 3
         frame = np.zeros((h,w,d))
-        frame[:,:,:3] = prv_frame
-        frame[:,:,3:6] = cur_frame
-        frame[:,:,6] = eye_mask.astype(np.float32)
-        frame[:,:,7] = shadow_mask.astype(np.float32)
-        state = frame
-        return state
+        frame[:,:,:3] = self.imgstates[0]
+        frame[:,:,3:6] = self.imgstates[1]
+        frame[:,:,6:9] = mask
+
+        return frame
+
+    def getstate3(self,mask):
+        h,w = self.imgstates[0].shape[:2]
+        d = len(self.imgstates) * 3 + 2
+        frame = np.zeros((h,w,d))
+        frame[:,:,:3] = self.imgstates[0]
+        frame[:,:,3:6] = self.imgstates[1]
+        frame[:,:,6:8] = mask
+
+        return frame
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
@@ -676,7 +644,7 @@ class World(DirectObject):
         self.step_count += 1
         visor = np.array(self.visorparam)
         visor = visor / 19.0
-        rewardpre,_,_= self.genRewardGT()
+        #rewardpre,_,_,_ = self.genRewardGT()
 
         for i,a in enumerate(actions):
             if i == 4:
@@ -700,122 +668,32 @@ class World(DirectObject):
 
         self.shadowon()
         cur_frame = self.getFrame()
-        #cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        #cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
-        #get next state and reward
-        reward,eye_mask,shadow_mask = self.genRewardGT()
+        #get next state
+        reward,eye_mask,shadow_mask, eye_and_shadow = self.genRewardGT()
+        mask = np.dstack((eye_mask,shadow_mask))
+        self.imgstates.append(cur_frame.astype(np.float32))
+
+        #get the reward
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
-        #done = (self.step_count >= 10) or (reward == 0.0)
         done = self.step_count >= 10 or reward > 0.25 or self.visorparam[2] <= 2 or self.visorparam[3] <= 2 or EYE < 0.5
         if self.visorparam[2] <= 2 or self.visorparam[3] <=2 or EYE < 0.5:
-            reward = 0
-        #if reward >= 0.25:
-        #    reward -= 0.25
-        #    reward /= 0.6
-        #elif reward < 0.25:
-        #    reward -= 0.25
-        #    reward /= 0.5
+            r1 = -1
+            r2 = -1
+        elif reward < 0.25:
+            r1 = reward - 1
+            r2 = 0
+        else:
+            r1 = 1 + reward
+            r2 = 1 + reward
+
 
         #set the next state
-        next_state = self.getstate2(self.prv_frame,cur_frame,eye_mask,shadow_mask)
-        self.prv_frame = cur_frame.copy()
+        next_state = self.getstate3(mask.astype(np.float32))
 
-        return visor,next_state,reward,done
-
-    #take a possible of 10 actions to move x,y,w,h,r up or down
-    #and update the visor mask accordingly
-    def step_1_6(self,actions,speed=1):
-        self.step_count += 1
-
-        a1,a2,a3 = [a for a in actions]
-
-        #action1 = move x y up down
-        if a1 == 0: self.visorparam[0] += speed
-        elif a1 == 1: self.visorparam[0] -= speed
-        elif a1 == 2: self.visorparam[1] += speed
-        elif a1 == 3: self.visorparam[1] -= speed
-
-        #action2 = inc h,w up down
-        if a2 == 0: self.visorparam[2] += speed
-        elif a2 == 1: self.visorparam[2] -= speed
-        elif a2 == 2: self.visorparam[3] += speed
-        elif a2 == 3: self.visorparam[3] -= speed
-
-        #action3 = inc theta up down
-        if a2 == 0: self.visorparam[4] += 5 * speed * pi / 180
-        elif a2 == 1: self.visorparam[4] -= 5 * speed * pi / 180
-
-        #get image with shadow after action
-        #self.incLightPos()
-        self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
-        self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
-        self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
-        self.visorparam[3] = min(max(0,self.visorparam[3]),self.height-1)
-        self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
-        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])     #PADDED HEIGHT AND WIDTH OF 15PIXELS
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
-        self.visormask *= 0
-        cv2.fillConvexPoly(self.visormask,box,(1))
-
-        self.shadowon()
-        cur_frame = self.getFrame()
-        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
-        cv2.waitKey(1)
-
-        #get next state and reward
-        reward,eye_mask,shadow_mask = self.genRewardGT()
-        #done = (self.step_count >= 10) or (reward == 0.0)
-        done = self.step_count >= 10 or reward > 0.25
-
-        #set the next state
-        next_state = self.getstate2(self.prv_frame,cur_frame,eye_mask,shadow_mask)
-        self.prv_frame = cur_frame.copy()
-
-        return next_state,reward,done
-
-    #take a possible of 10 actions to move x,y,w,h,r up or down
-    #and update the visor mask accordingly
-    def step(self,actions,speed=1):
-        self.step_count += 1
-
-        actions = (actions + 1) * (self.action_low + self.action_high) / 2
-        self.visorparam = actions
-
-        #get image with shadow after action
-        #self.incLightPos()
-        self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
-        self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
-        self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
-        self.visorparam[3] = min(max(0,self.visorparam[3]),self.height-1)
-        self.visorparam[4] = min(max(-pi,self.visorparam[4]),pi)
-        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
-        self.visormask *= 0
-        cv2.fillConvexPoly(self.visormask,box,(1))
-
-        #display the visor and show some data
-        self.shadowon()
-        cur_frame = self.getFrame()
-        cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
-        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
-        cv2.waitKey(1)
-
-        #get next state and reward and stopping flag
-        reward,eye_mask,shadow_mask = self.genRewardGT()
-        done = self.step_count >= 5 or reward > 0.20
-
-        #set the next state
-        next_state = self.getstate2(self.prv_frame,cur_frame,eye_mask,shadow_mask)
-        self.prv_frame = cur_frame.copy()
-        return next_state,reward,done
+        return visor,next_state,r1,r2,done
 
     def spinLightTask(self,task):
         angleDegrees = (self.light_angle - 80)

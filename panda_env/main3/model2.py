@@ -14,6 +14,7 @@ import resnet
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
 from logger import Logger
+from torch.distributions import Categorical
 
 ##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
@@ -90,6 +91,7 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,1)
                 )
+        #self.val_out = nn.Linear(256,1)
 
         self.action = nn.Sequential(
                 nn.BatchNorm1d(256),
@@ -99,11 +101,12 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,243)
                 )
+        #self.act_out = nn.Linear(256,243)
 
     def forward(self,state):
-        v,frame = state
+        visor,frame = state
         x = self.res18(frame)
-        x = torch.cat((v,x),dim=-1)
+        x = torch.cat((visor,x),dim=-1)
         x = self.h1(x)
         v = self.value(x)
         a = self.action(x)
@@ -207,11 +210,7 @@ class Model():
 
         expected_state_action_values = (qvals_t * self.GAMMA) * (1-d) + r1
 
-        #print(r1)
-        #print(expected_state_action_values)
-
         #LOSS IS l2 loss of belmont equation
-        #loss = self.l2(state_action_values,expected_state_action_values)
         loss = self.l2(qvals,expected_state_action_values)
 
         self.opt.zero_grad()
@@ -233,6 +232,21 @@ class Model():
             idx = a.max(1)[1].item()
             a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
             return a1[0], a2[0],a3[0],a4[0],a5[0]
+
+    def select_caction(self,state):
+        self.model.eval()
+        with torch.no_grad():
+            frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
+            frame = frame.permute(2,0,1).unsqueeze(0)
+            v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
+            #send the state through the DQN and get the index with the highest value for that state
+            a = self.model((v,frame))
+            probs = F.softmax(a)
+            m = Categorical(probs)
+            action = m.sample()
+            idx = action.item()
+            a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
+            return a1[0],a2[0],a3[0],a4[0],a5[0]
 
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
     def select_action(self,state):
@@ -257,7 +271,4 @@ class Model():
     def save(self,outfile):
         if not os.path.isdir('model'): os.mkdir('model')
         torch.save(self.model.state_dict(),os.path.join('model',outfile))
-
-
-
 

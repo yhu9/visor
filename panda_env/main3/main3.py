@@ -31,7 +31,7 @@ agent = Model(opt.load,mode='DDQN')
 
 ##########################################################################
 #TRAIN THE VISOR
-def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
+def train(n_episodes=30000, max_t=10, print_every=1, save_every=20):
 
     logger = Logger('./logs')
     scores_deque = deque(maxlen=200)
@@ -39,7 +39,7 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
     scores= []
     best = 0
 
-    for i_episode in count():
+    for i_episode in range(n_episodes):
         state = env.reset2_4(manual_pose=(i_episode % 200) + 1)
         score = 0
         timestep = time.time()
@@ -87,6 +87,7 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
             print('SAVED')
             best = solv_avg
             agent.save(opt.out)
+    agent.save(opt.out)
 
 def test(n_episodes=200, max_t=20, print_every=1):
 

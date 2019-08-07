@@ -2,19 +2,12 @@ import itertools
 import math
 import random
 import os
-import sys
 from collections import namedtuple
 
-import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import resnet
-import matplotlib.pyplot as plt
-from torch.autograd import Variable
-from logger import Logger
-from torch.distributions import Categorical
 
 ##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
@@ -82,7 +75,6 @@ class DDQN(nn.Module):
 
         self.res18 = resnet.resnet18()
         self.h1 = nn.Linear(1005,256)
-
         self.value = nn.Sequential(
                 nn.BatchNorm1d(256),
                 nn.ReLU(),
@@ -91,7 +83,6 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,1)
                 )
-        #self.val_out = nn.Linear(256,1)
 
         self.action = nn.Sequential(
                 nn.BatchNorm1d(256),
@@ -101,7 +92,6 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,243)
                 )
-        #self.act_out = nn.Linear(256,243)
 
     def forward(self,state):
         visor,frame = state
@@ -113,33 +103,9 @@ class DDQN(nn.Module):
         q = v + (a - torch.mean(a))
         return q
 
-#DDPG with limited action space
-class DQN(nn.Module):
-
-    def __init__(self):
-        super(DQN,self).__init__()
-
-        self.res18 = resnet.resnet18()
-        self.action = nn.Sequential(
-                nn.Linear(1000+5,256),
-                nn.BatchNorm1d(256),
-                nn.ReLU(),
-                nn.Linear(256,256),
-                nn.BatchNorm1d(256),
-                nn.ReLU(),
-                nn.Linear(256,243)
-                )
-
-    def forward(self,state):
-        v,frame = state
-        x = self.res18(frame)
-        x = torch.cat((v,x),dim=-1)
-        a = self.action(x)
-        return a
-
 #OUR MAIN MODEL WHERE ALL THINGS ARE RUN
 class Model():
-    def __init__(self,load=False,mode='DQN'):
+    def __init__(self,load=False,mode='DDQN'):
 
         def init_weights(m):
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
@@ -148,23 +114,20 @@ class Model():
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 32
-        self.GAMMA = 0.999
+        self.GAMMA = 0.99
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 10000
-        self.TARGET_UPDATE = 20
+        self.TARGET_UPDATE = 30
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000,device=self.device)
 
         print(self.device)
+
         #OUR NETWORK
-        if mode == 'DQN':
-            self.model= DQN()
-            self.target_net = DQN()
-        elif mode == 'DDQN':
-            self.model= DDQN()
-            self.target_net = DDQN()
+        self.model= DDQN()
+        self.target_net = DDQN()
         self.model.to(self.device)
         self.target_net.to(self.device)
 
@@ -178,7 +141,7 @@ class Model():
             self.target_net.apply(init_weights)
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
-        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.0001,betas=(0.0,0.9))
+        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001,betas=(0.0,0.9))
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 
@@ -195,18 +158,9 @@ class Model():
         qvals = self.model(s1)
         qvals = qvals.gather(1,a)
 
-        #q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
-        #q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
-        #q3 = qvals[2].gather(1,actions[:,2].unsqueeze(1))
-        #state_action_values = torch.cat((q1,q2,q3),-1)
-
         with torch.no_grad():
             qvals_t = self.target_net(s2)
             qvals_t = qvals_t.max(1)[0].unsqueeze(1)
-            #q1_t = qvals_t[0].max(1)[0].unsqueeze(1)
-            #q2_t = qvals_t[1].max(1)[0].unsqueeze(1)
-            #q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
-            #q_target = torch.cat((q1_t,q2_t,q3_t),-1)
 
         expected_state_action_values = (qvals_t * self.GAMMA) * (1-d) + r1
 
@@ -233,22 +187,8 @@ class Model():
             a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
             return a1[0], a2[0],a3[0],a4[0],a5[0]
 
-    def select_caction(self,state):
-        self.model.eval()
-        with torch.no_grad():
-            frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
-            frame = frame.permute(2,0,1).unsqueeze(0)
-            v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
-            #send the state through the DQN and get the index with the highest value for that state
-            a = self.model((v,frame))
-            probs = F.softmax(a)
-            m = Categorical(probs)
-            action = m.sample()
-            idx = action.item()
-            a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
-            return a1[0],a2[0],a3[0],a4[0],a5[0]
-
     #STOCHASTIC ACTION SELECTION WITH DECAY TOWARDS GREEDY SELECTION. Actions are represented as onehot values
+    #STOCHASTIC CHOICE IS PSEUDO RANDOM
     def select_action(self,state):
         self.model.eval()
         with torch.no_grad():
@@ -259,15 +199,14 @@ class Model():
                 frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
                 v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
-                #send the state through the DQN and get the index with the highest value for that state
                 a = self.model((v,frame))
                 idx = a.max(1)[1].item()
                 a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
                 return a1[0],a2[0],a3[0],a4[0],a5[0]
-                #return a1.max(1)[1].item(), a2.max(1)[1].item(),a3.max(1)[1].item()
             else:
                 return random.randrange(3), random.randrange(3), random.randrange(3), random.randrange(3),random.randrange(3)
 
+    #SAVE THE CURRENT MODEL IN THE MODEL DIRECTORY
     def save(self,outfile):
         if not os.path.isdir('model'): os.mkdir('model')
         torch.save(self.model.state_dict(),os.path.join('model',outfile))

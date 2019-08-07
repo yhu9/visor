@@ -81,7 +81,7 @@ class DDQN(nn.Module):
         super(DDQN,self).__init__()
 
         self.res18 = resnet.resnet18()
-        self.h1 = nn.Linear(1010,256)
+        self.h1 = nn.Linear(1015,256)
 
         self.value = nn.Sequential(
                 nn.BatchNorm1d(256),
@@ -147,10 +147,10 @@ class Model():
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 32
-        self.GAMMA = 0.99
+        self.GAMMA = 0.95
         self.EPS_START = 0.9
-        self.EPS_END = 0.05
-        self.EPS_DECAY = 10000
+        self.EPS_END = 0.10
+        self.EPS_DECAY = 20000
         self.TARGET_UPDATE = 20
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1

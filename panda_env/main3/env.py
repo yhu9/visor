@@ -644,7 +644,6 @@ class World(DirectObject):
         self.step_count += 1
         visor = np.array(self.visorparam)
         visor = visor / 19.0
-        #rewardpre,_,_,_ = self.genRewardGT()
 
         for i,a in enumerate(actions):
             if i == 4:
@@ -687,8 +686,7 @@ class World(DirectObject):
             r2 = 0
         else:
             r1 = reward - 1
-            r2 = reward + 1
-
+            r2 = reward
 
         #set the next state
         next_state = self.getstate3(mask.astype(np.float32))
@@ -698,14 +696,14 @@ class World(DirectObject):
     def spinLightTask(self,task):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
 
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

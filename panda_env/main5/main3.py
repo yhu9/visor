@@ -31,7 +31,7 @@ agent = Model(opt.load,mode='DDQN')
 
 ##########################################################################
 #TRAIN THE VISOR
-def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
+def train(n_episodes=50000, max_t=10, print_every=1, save_every=20):
 
     logger = Logger('./logs')
     scores_deque = deque(maxlen=200)
@@ -41,7 +41,6 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
 
     for i_episode in count():
         state = env.reset2_4(manual_pose=(i_episode % 200) + 1)
-        #goal = state[1][:,:,-1]
         score = 0
         timestep = time.time()
         for t in range(max_t):
@@ -52,10 +51,13 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
             score += r2
 
             #store HER transition into memory (s,a,s_t+1,r)
-            #agent.memory.push((visor,state[1].copy()),actions,next_state,r1,done)
+            sg1 = state[1].copy()
+            sg1[:,:,0] = s2[:,:,-1]
+            sg2 = next_state[1].copy()
+            sg2[:,:,0] = s2[:,:,-1]
+            agent.memory.push((visor,sg1),actions,(next_state[0],sg2),r1,done)
 
             #push state and goal to memory
-            #state[1][:,:,-1] = goal
             agent.memory.push(state,actions,next_state,r2,done)
             state = next_state
 
@@ -80,13 +82,14 @@ def train(n_episodes=1000000, max_t=10, print_every=1, save_every=20):
             agent.target_net.load_state_dict(agent.model.state_dict())
 
         if i_episode % print_every == 0:
-            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Time: {:.2f}, Solv: {:.2f}'\
-                  .format(i_episode, score_average, np.max(scores), np.min(scores), time.time() - timestep, solv_avg),end="\n")
+            print('\rEpisode {}, Average Score: {:.2f}, Time: {:.2f}, Solv: {:.2f}, Loss: {:.4f}'\
+                  .format(i_episode, score_average, time.time() - timestep, solv_avg, loss),end="\n")
 
-        if solv_avg >= best and len(solved_deque) >= 100:
+        if solv_avg >= best and len(solved_deque) >= 200:
             print('SAVED')
             best = solv_avg
             agent.save(opt.out)
+    agent.save(opt.out)
 
 def test(n_episodes=200, max_t=20, print_every=1):
 

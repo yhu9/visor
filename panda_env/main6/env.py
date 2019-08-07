@@ -345,6 +345,7 @@ class World(DirectObject):
         self.shadowon()
 
         #get the initial state as two copies of the first image
+        base.graphicsEngine.renderFrame()
         self.prv_frame = self.getFrame()
         cur_frame = self.prv_frame
         h,w = cur_frame.shape[:2]
@@ -382,13 +383,13 @@ class World(DirectObject):
         self.shadowon()
 
         #get the initial state as two copies of the first image
-        cur_frame = self.getFrame()
+        base.graphicsEngine.renderFrame()
 
-        self.imgstates = deque(maxlen=2)
-        self.visorstates = deque(maxlen=2)
+        self.imgstates = deque(maxlen=3)
+        self.visorstates = deque(maxlen=3)
         self.eye_mask = eye_mask.astype(np.float32)
-        for i in range(2): self.imgstates.append(np.dstack((cur_frame,shadow_mask.astype(np.float32))))
-        for i in range(2): self.visorstates.append(self.visorparam.copy())
+        for i in range(3): self.imgstates.append(shadow_mask.copy().astype(np.float32))
+        for i in range(3): self.visorstates.append(self.visorparam.copy())
 
         visor,frame = self.getstate()
 
@@ -591,19 +592,32 @@ class World(DirectObject):
     #GRAB THE CURRENT STATE
     def getstate(self):
         h,w = self.eye_mask.shape[:2]
-        d = 9
+        d = 4
         frame = np.zeros((h,w,d))
 
         frame[:,:,0] = self.eye_mask.copy()
-        frame[:,:,1:5] = self.imgstates[0]
-        frame[:,:,5:9] = self.imgstates[1]
+        frame[:,:,1] = self.imgstates[0]
+        frame[:,:,2] = self.imgstates[1]
+        frame[:,:,3] = self.imgstates[2]
         state = frame
 
         visor = []
         visor += self.visorstates[0]
         visor += self.visorstates[1]
+        visor += self.visorstates[2]
 
         return visor,state
+
+    #get state
+    def getstate2(self,mask):
+        h,w = self.imgstates[0].shape[:2]
+        d = len(self.imgstates) * 3 + 3
+        frame = np.zeros((h,w,d))
+        frame[:,:,:3] = self.imgstates[0]
+        frame[:,:,3:6] = self.imgstates[1]
+        frame[:,:,6:9] = mask
+
+        return frame
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
@@ -638,7 +652,7 @@ class World(DirectObject):
         reward,eye_mask,shadow_mask = self.genRewardGT()
 
         #push next state
-        self.imgstates.append(np.dstack((cur_frame,shadow_mask)))
+        self.imgstates.append(shadow_mask)
         self.visorstates.append(self.visorparam.copy())
 
         #get the reward

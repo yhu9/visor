@@ -104,6 +104,7 @@ class World(DirectObject):
         self.lpos = self.getLightData()
         self.geompos = self.getVertexData()
 
+    #GET THE VISOR VERTEX INFORMATION IN 3D WORLD SPACE
     def getVisorData(self):
         data = [[None] * len(self.hexes[i]) for i in range(len(self.hexes))]
         for i in range(len(self.hexes)):
@@ -111,10 +112,12 @@ class World(DirectObject):
                 data[i][j] = self.hexes[i][j].getPos(self.render1)
         return np.array(data)
 
+    #GET THE LIGHT POSITION. LIGHT IS POINTING TOWARDS 0,0,0 ALWAYS
     def getLightData(self):
         lpos = self.light.getPos(self.render1)
         return np.array([lpos[0],lpos[1],lpos[2]])
 
+    #ACQUIRE VERTEX INFORMATION OF THE EYE LOCATION IN 3D WORLD SPACE
     def getVertexData(self):
         self.dennis2.flattenLight()
         def processPrim(prim,vertex,data):
@@ -138,20 +141,11 @@ class World(DirectObject):
                 p = g.getPrimitive(j)
                 processPrim(p,vdata,data)
             data = np.array(data[:data.index(None)])
-            #T = LMatrix4()
-            #a = geomNode.getTransform(render)
-            #print(a)
-            #quit()
-            #T = self.dennis2.getJoints(jointName='head')[-1].getTransform()
-            #T = np.array(T.getRows())
-            #data = np.matmul(data,T.transpose())
-            #print(data)
-            #print(T)
-            #quit()
             geoms.append((data[:,:3],m))
 
         return geoms
 
+    #DETERMINE CLOSED FORM VISOR LOCATION TO ACTIVATE
     def calcVisor(self,task):
         self.getInfo()
         lvec = self.lpos
@@ -168,17 +162,6 @@ class World(DirectObject):
 
         #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
         #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
-        #ins = np.stack((tl[1:],bl[1:],tr[1:]))
-        #out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
-        #out = np.array([[0,self.height-1],[self.width-1,self.height-1],[0,0]])
-        #out = np.array([[0,0],[self.width-1,0],[0,self.height-1]])
-        #l = len(ins)
-        #B = np.vstack([ins.transpose(),np.ones(l)])
-        #D = 1.0 / np.linalg.det(B)
-        #entry = lambda r,d: np.linalg.det(np.delete(np.vstack([r,B]),(d+1),axis=0))
-        #M = [[(-1)**i * D * entry(R,i) for i in range(l)] for R in np.transpose(out)]
-        #A, t = np.hsplit(np.array(M),[l-1])
-        #t = np.transpose(t)[0]
         tl = np.hstack((tl,[1]))
         tr = np.hstack((tr,[1]))
         bl = np.hstack((bl,[1]))
@@ -190,7 +173,6 @@ class World(DirectObject):
         #get intersection of eye verticies with visor plane along the light ray
         nvec = np.cross(v1,v2)  #normal to the visor
         d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
-        #d = np.dot(tl + -1 * geom,nvec) / np.dot(lvec,nvec)
         intersection = geom + d[:,np.newaxis] * lvec
         t1 = intersection[:,1:]
 
@@ -211,7 +193,7 @@ class World(DirectObject):
         cv2.waitKey(1)
 
         #get bounding box of the intersection points in 2d space collapsing the x axis
-        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why 100? cuz opencv can't handle floats
+        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why 10^-5 PERCISION
         rect = cv2.minAreaRect(pnts.astype(np.int32))
         pnt,dim,r = rect
         x,y = pnt
@@ -219,8 +201,7 @@ class World(DirectObject):
         box = cv2.boxPoints(rect)   #tr,tl,bl,br
 
         #TRANSFORM INTERSECTION WORLD COORD TO VISOR MASK
-        box = (box - 100000) / 100000
-        #box = np.matmul(A,box.transpose()).transpose() + t
+        box = (box - 100000) / 100000           #DOWNSCALE BY PERCISION
         box = np.hstack((box,np.ones((box.shape[0],1))))
         box = np.matmul(box,A)
         xpad = 2
@@ -229,7 +210,6 @@ class World(DirectObject):
         box = np.rint(box)
         box[:,0] = -box[:,0] + self.width
         box[:,0] -= 3
-        #box[:,1] += 4
         box = np.int0(box)
         self.visormask *= 0
         cv2.fillConvexPoly(self.visormask,box,(1))
@@ -239,6 +219,7 @@ class World(DirectObject):
 
         return task.again
 
+    #DRAW REWARD FOR VISUALIZATION
     def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,reward):
         h,w,d = rgb.shape
         img = np.zeros((h,w+100,d))
@@ -364,7 +345,6 @@ class World(DirectObject):
         self.shadowon()
 
         #get the initial state as two copies of the first image
-        base.graphicsEngine.renderFrame()
         self.prv_frame = self.getFrame()
         cur_frame = self.prv_frame
         h,w = cur_frame.shape[:2]
@@ -379,9 +359,8 @@ class World(DirectObject):
         self.step_count = 1
         if manual_pose: poseid = manual_pose
         else: poseid = random.randint(1,200)
-        self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
-        #self.light_angle = random.randint(-135,135)
+        self.dennis.pose('head_movement',poseid)
+        self.dennis2.pose('head_movement',poseid)
         self.incLightPos(speed=2)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get current situation
@@ -403,16 +382,17 @@ class World(DirectObject):
         self.shadowon()
 
         #get the initial state as two copies of the first image
-        base.graphicsEngine.renderFrame()
-        frame = self.getFrame()
+        cur_frame = self.getFrame()
 
-        self.imgstates = deque(maxlen=2)
-        mask = np.dstack((eye_mask,shadow_mask)).astype(np.float32)
-        for i in range(2): self.imgstates.append(frame.copy().astype(np.float32))
+        self.imgstates = deque(maxlen=3)
+        self.visorstates = deque(maxlen=3)
+        self.eye_mask = eye_mask.astype(np.float32)
+        for i in range(3): self.imgstates.append(np.dstack((cur_frame,shadow_mask.astype(np.float32))))
+        for i in range(3): self.visorstates.append(self.visorparam.copy())
 
-        frame = self.getstate2(mask)
+        visor,frame = self.getstate()
 
-        return np.array(self.visorparam) / 19.0, frame
+        return np.array(visor) / 19.0, frame
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
@@ -608,32 +588,29 @@ class World(DirectObject):
                 else:
                     self.hexes[i][j].hide()
 
-    def getstate(self,prv_frame,cur_frame):
-        h,w = cur_frame.shape[:2]
-        d = 6
+    #GRAB THE CURRENT STATE
+    def getstate(self):
+        h,w = self.eye_mask.shape[:2]
+        d = 13
         frame = np.zeros((h,w,d))
-        frame[:,:,:3] = prv_frame
-        frame[:,:,3:] = cur_frame
+
+        frame[:,:,0] = self.eye_mask.copy()
+        frame[:,:,1:5] = self.imgstates[0]
+        frame[:,:,5:9] = self.imgstates[1]
+        frame[:,:,9:13] = self.imgstates[2]
         state = frame
-        return state
 
-    #get state
-    def getstate2(self,mask):
-        h,w = self.imgstates[0].shape[:2]
-        d = len(self.imgstates) * 3 + 2
-        frame = np.zeros((h,w,d))
-        frame[:,:,:3] = self.imgstates[0]
-        frame[:,:,3:6] = self.imgstates[1]
-        frame[:,:,6:8] = mask
+        visor = []
+        visor += self.visorstates[0]
+        visor += self.visorstates[1]
+        visor += self.visorstates[2]
 
-        return frame
+        return visor,state
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
     def step2_4(self,actions,speed=1):
         self.step_count += 1
-        visor = np.array(self.visorparam)
-        visor = visor / 19.0
 
         for i,a in enumerate(actions):
             if i == 4:
@@ -643,7 +620,6 @@ class World(DirectObject):
             elif a == 1: self.visorparam[i] -= speed
 
         #get image with shadow after action
-        #self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -662,8 +638,10 @@ class World(DirectObject):
 
         #get next state
         reward,eye_mask,shadow_mask = self.genRewardGT()
-        mask = np.dstack((eye_mask,shadow_mask))
-        self.imgstates.append(cur_frame.astype(np.float32))
+
+        #push next state
+        self.imgstates.append(np.dstack((cur_frame,shadow_mask)))
+        self.visorstates.append(self.visorparam.copy())
 
         #get the reward
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
@@ -675,29 +653,31 @@ class World(DirectObject):
             r1 = reward - 1
             r2 = 0
         else:
-            r1 = reward - 1
-            r2 = 1 + reward
-
+            r1 = reward + 1
+            r2 = reward + 1
 
         #set the next state
-        next_state = self.getstate2(mask.astype(np.float32))
+        visor, next_state = self.getstate()
 
         return visor,next_state,r1,r2,done
 
+    #FOR VIRTUAL ENVIRONMENT DEMO
     def spinLightTask(self,task):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again
 
+    #MANUAL VIRTUAL ENV CONTROLLER
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 
+    #MANUAL VIRTUAL ENV CONTROLLER
     def incCarPos(self,speed):
         self.car_x += (self.car_x + speed) % 180
         self.car.setY(sin((self.car_x)* pi / 180) * 0.1 )

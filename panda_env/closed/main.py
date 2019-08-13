@@ -75,12 +75,12 @@ def test(n_episodes=200, max_t=20, print_every=1,noise1=0.00,noise2=0.00):
 
 if __name__ == '__main__':
     if opt.test:
-        noise1_vals = [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]
-        noise2_vals = [0.005,0.01,0.015,0.02,0.025,0.03,0.035,0.04,0.045]
-        for i in [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]:
+        lnoise_vals = [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]
+        gnoise_vals = [0.005,0.01,0.015,0.02,0.025,0.03,0.035,0.04,0.045]
+        for i,j in zip(lnoise_vals,gnoise_vals):
             vals = []
             for _ in range(5):
-                score = test(noise1=0.00,noise2=i)
+                score = test(noise1=j,noise2=i)
                 vals.append(score)
             print('mode: ' + str(i) + ' mean score: ' + str(np.mean(vals)))
     else:

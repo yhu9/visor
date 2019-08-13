@@ -653,7 +653,6 @@ class World(DirectObject):
             elif a == 1: self.visorparam[i] -= speed
 
         #get image with shadow after action
-        #self.incLightPos()
         self.visorparam[0] = min(max(0,self.visorparam[0]),self.width-1)
         self.visorparam[1] = min(max(0,self.visorparam[1]),self.height-1)
         self.visorparam[2] = min(max(0,self.visorparam[2]),self.width-1)
@@ -706,10 +705,6 @@ class World(DirectObject):
         self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
-
-    def incCarPos(self,speed):
-        self.car_x += (self.car_x + speed) % 180
-        self.car.setY(sin((self.car_x)* pi / 180) * 0.1 )
 
     def incrementCameraPosition(self,n):
         self.cameraSelection = (self.cameraSelection + n) % 3

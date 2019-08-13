@@ -1,4 +1,4 @@
-#Installation Instructions
+# Installation Instructions
 
 I highly recommend creating a virtual environment and doing the installation on anaconda since that is what I did. Any other installation methods will have to be glued together by yourself.
 

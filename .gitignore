@@ -10,4 +10,6 @@ panda_env/log
 **/log
 **/model
 *.png
+*.jpg
 
+playground

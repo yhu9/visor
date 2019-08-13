@@ -149,7 +149,7 @@ class Model():
         self.BATCH_SIZE = 32
         self.GAMMA = 0.99
         self.EPS_START = 0.9
-        self.EPS_END = 0.05
+        self.EPS_END = 0.10
         self.EPS_DECAY = 10000
         self.TARGET_UPDATE = 20
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")

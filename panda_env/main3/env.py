@@ -703,7 +703,7 @@ class World(DirectObject):
 
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.2 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

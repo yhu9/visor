@@ -85,6 +85,7 @@ class World(DirectObject):
 
         #number of steps taken
         self.step_count = 0
+        self.noise_variance = 0.00
 
         #initialize the scene
         self.init_scene()
@@ -92,6 +93,8 @@ class World(DirectObject):
         self.addControls()
         self.reset(manual_pose=1)
         self.visorpos = self.getVisorData()
+        self.visorpos[:,:,1] -= 0.15
+        self.visorpos[:,:,2] -= 0.05
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
         taskMgr.doMethodLater(.1,self.viewReward,"drawReward")
@@ -104,6 +107,7 @@ class World(DirectObject):
         self.lpos = self.getLightData()
         self.geompos = self.getVertexData()
 
+    #GET 3D VISOR COORDINATES IN WORLD COORDINATE SPACE
     def getVisorData(self):
         data = [[None] * len(self.hexes[i]) for i in range(len(self.hexes))]
         for i in range(len(self.hexes)):
@@ -111,10 +115,12 @@ class World(DirectObject):
                 data[i][j] = self.hexes[i][j].getPos(self.render1)
         return np.array(data)
 
+    #GET 3D LIGHT COORDINATES IN WORLD COORDINATE SPACE
     def getLightData(self):
         lpos = self.light.getPos(self.render1)
         return np.array([lpos[0],lpos[1],lpos[2]])
 
+    #GET 3D EYE REGION COORDINATES IN WORLD COORDINATE SPACE BASED ON COLOR
     def getVertexData(self):
         self.dennis2.flattenLight()
         def processPrim(prim,vertex,data):
@@ -138,26 +144,21 @@ class World(DirectObject):
                 p = g.getPrimitive(j)
                 processPrim(p,vdata,data)
             data = np.array(data[:data.index(None)])
-            #T = LMatrix4()
-            #a = geomNode.getTransform(render)
-            #print(a)
-            #quit()
-            #T = self.dennis2.getJoints(jointName='head')[-1].getTransform()
-            #T = np.array(T.getRows())
-            #data = np.matmul(data,T.transpose())
-            #print(data)
-            #print(T)
-            #quit()
             geoms.append((data[:,:3],m))
 
         return geoms
 
+    #TASK FOR CALCULATING VISOR ACTIVATION MAP BASED ON CLOSED FORM SOLUTION
     def calcVisor(self,task):
+        #add noise to light vector and its direction
         self.getInfo()
-        lvec = self.lpos
+        lvec = self.lpos + np.random.normal(0,self.noise_variance,3) - np.random.normal(0,self.noise_variance,3)
+
         for geom,material in self.geompos:
             color = material.getDiffuse()
             if color[0] == 1 and color[1] == 0 and color[2] == 0: break
+
+        geom += np.random.normal(0,self.noise_variance,geom.shape)
 
         bl = self.visorpos[0,0]
         br = self.visorpos[0,self.width-1]
@@ -168,17 +169,6 @@ class World(DirectObject):
 
         #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
         #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
-        #ins = np.stack((tl[1:],bl[1:],tr[1:]))
-        #out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
-        #out = np.array([[0,self.height-1],[self.width-1,self.height-1],[0,0]])
-        #out = np.array([[0,0],[self.width-1,0],[0,self.height-1]])
-        #l = len(ins)
-        #B = np.vstack([ins.transpose(),np.ones(l)])
-        #D = 1.0 / np.linalg.det(B)
-        #entry = lambda r,d: np.linalg.det(np.delete(np.vstack([r,B]),(d+1),axis=0))
-        #M = [[(-1)**i * D * entry(R,i) for i in range(l)] for R in np.transpose(out)]
-        #A, t = np.hsplit(np.array(M),[l-1])
-        #t = np.transpose(t)[0]
         tl = np.hstack((tl,[1]))
         tr = np.hstack((tr,[1]))
         bl = np.hstack((bl,[1]))
@@ -190,55 +180,46 @@ class World(DirectObject):
         #get intersection of eye verticies with visor plane along the light ray
         nvec = np.cross(v1,v2)  #normal to the visor
         d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
-        #d = np.dot(tl + -1 * geom,nvec) / np.dot(lvec,nvec)
         intersection = geom + d[:,np.newaxis] * lvec
         t1 = intersection[:,1:]
 
-        #(OPTIONAL VISUALIZATION)
-        img = np.zeros((500,500,3))
-        b1 = tl * 100 + 100
-        b2 = tr * 100 + 100
-        b3 = bl * 100 + 100
-        b4 = br * 100 + 100
-        vbox = np.array([b2[1:-1],b1[1:-1],b3[1:-1],b4[1:-1]])
-        #vbox = np.array([b2[1:],b1[1:],b3[1:],b4[1:]])
-        vbox = np.int0(vbox)
-        cv2.fillConvexPoly(img,vbox,(255,255,255))
-        for p in t1:
-            pnt = (p * 100 + 100).astype(np.uint16)
-            cv2.circle(img,(pnt[0],pnt[1]),1,(0,255,0),-1)
-        cv2.imshow('img',img)
-        cv2.waitKey(1)
-
         #get bounding box of the intersection points in 2d space collapsing the x axis
-        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why 100? cuz opencv can't handle floats
+        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why scale? cuz opencv can't handle floats
         rect = cv2.minAreaRect(pnts.astype(np.int32))
         pnt,dim,r = rect
         x,y = pnt
         w,h = dim
-        box = cv2.boxPoints(rect)   #tr,tl,bl,br
-
-        #TRANSFORM INTERSECTION WORLD COORD TO VISOR MASK
+        box = cv2.boxPoints(rect)   #br,bl,tl,tr
         box = (box - 100000) / 100000
-        #box = np.matmul(A,box.transpose()).transpose() + t
-        box = np.hstack((box,np.ones((box.shape[0],1))))
-        box = np.matmul(box,A)
-        xpad = 2
-        ypad = 2
-        box = box[:,:2] + np.array([[xpad,-ypad],[-xpad,-ypad],[-xpad,ypad],[xpad,ypad]])
-        box = np.rint(box)
-        box[:,0] = -box[:,0] + self.width
-        box[:,0] -= 3
-        #box[:,1] += 4
-        box = np.int0(box)
+
+        #get which visor hexagons activated
         self.visormask *= 0
-        cv2.fillConvexPoly(self.visormask,box,(1))
+        p1,p2,p3,p4 = box
+        m1 = (p1[1] - p2[1]) / (p1[0] - p2[0])
+        m2 = (p2[1] - p3[1]) / (p2[0] - p3[0])
+        m3 = (p3[1] - p4[1]) / (p3[0] - p4[0])
+        m4 = (p4[1] - p1[1]) / (p4[0] - p1[0])
+        l1 = lambda x,y: y <= m1 * (x - p1[0]) + p1[1] + 0.05
+        l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.07) + p2[1]
+        l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.05
+        l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.07) + p4[1]
+        for i in range(self.height):
+            for j in range(self.width):
+                hexagon = self.visorpos[i,j][1:]
+                c1 = l1(hexagon[0],hexagon[1])
+                c2 = l2(hexagon[0],hexagon[1])
+                c3 = l3(hexagon[0],hexagon[1])
+                c4 = l4(hexagon[0],hexagon[1])
+
+                if c1 and c2 and c3 and c4:
+                    self.visormask[i,j] = 1
+
         self.shadowon()
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
-
         return task.again
 
+    #VISUALIZE REWARD FUNCTION
     def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,reward):
         h,w,d = rgb.shape
         img = np.zeros((h,w+100,d))
@@ -416,7 +397,6 @@ class World(DirectObject):
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
-
         #GENERATE SECOND WINDOW TO SHOW MATERIAL REGIONS
         self.win2 = base.openWindow()
         displayRegion = self.win2.makeDisplayRegion()
@@ -485,6 +465,7 @@ class World(DirectObject):
         self.light.node().getLens().set_film_size(20)
         self.light.node().getLens().setFov(20)
         self.light.node().getLens().setNearFar(10, 50)
+
         self.render1.setLight(self.light)
         self.render2.setLight(self.light)
 
@@ -496,8 +477,6 @@ class World(DirectObject):
         #Important! Enable the shader generator.
         self.render1.setShaderAuto()
         self.render2.setShaderAuto()
-        self.render1.show(BitMask32.bit(1))
-        self.render2.show(BitMask32.bit(1))
 
         # default values
         self.light_angle = 0.0
@@ -514,16 +493,23 @@ class World(DirectObject):
     ##########################################################
     #SOME CONTROL SEQUENCES
     def addControls(self):
+        self.info =  TextNode('info')
+        self.info.setText("Noise: " + str(self.noise_variance))
+        textNodePath = aspect2d.attachNewNode(self.info)
+        textNodePath.setScale(0.10)
+        textNodePath.setPos(0.8,0,0.9)
+
         #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
         #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
-        #addInstructions(0.18, 'a : put sun on face')
-        #addInstructions(0.24, 's : toggleSun')
-        #addInstructions(0.30, 'd : toggle visor')
-        #addInstructions(0.36, 'v: View the Depth-Texture results')
-        #addInstructions(0.42, 'tab : view buffer')
+        addInstructions(0.18, 'a : put sun on face')
+        addInstructions(0.24, 's : toggleSun')
+        addInstructions(0.30, 'd : toggle visor mode')
+        addInstructions(0.36, 'p: toggle face pose')
+        addInstructions(0.42, '1: inc noise up')
+        addInstructions(0.48, '1: inc noise down')
         self.anim_flag = False
         self.accept('escape', self.exit)
-        #self.accept("a", self.putSunOnFace)
+        self.accept("a", self.putSunOnFace)
         self.accept("d", self.toggleVisor,[1])
         self.accept("r", self.recordScreen)
         self.accept("arrow_left", self.incrementCameraPosition, [-1])
@@ -531,6 +517,9 @@ class World(DirectObject):
         self.accept("f12",base.screenshot,['recording/snapshot'])
         self.accept("tab", base.bufferViewer.toggleEnable)
         self.accept("p", self.addAnimation)
+        self.accept("1", self.incNoise,[0.01])
+        self.accept("2", self.incNoise,[-0.01])
+        self.accept("r", self.resetNoise)
 
     def exit(self):
         quit()
@@ -692,16 +681,19 @@ class World(DirectObject):
         self.light_angle += 5
         return task.again
 
+
+    ###########################################################################################################
+    #MANUAL CONTROL FUNCTIONS
+    ###########################################################################################################
+
+    #INCREMENT LIGHT POSITION
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
         self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 
-    def incCarPos(self,speed):
-        self.car_x += (self.car_x + speed) % 180
-        self.car.setY(sin((self.car_x)* pi / 180) * 0.1 )
-
+    #CHANGE CAMERA VIEW POSITION
     def incrementCameraPosition(self,n):
         self.cameraSelection = (self.cameraSelection + n) % 3
         if (self.cameraSelection == 1):
@@ -717,6 +709,15 @@ class World(DirectObject):
             self.cam.setPos(self.light.getPos())
             self.cam.lookAt(0,0,0)
 
+    #INCREMENT NOISE VALUE
+    def incNoise(self,n):
+        self.noise_variance += n
+        self.info.setText("Noise: " + str(self.noise_variance))
+
+    #RESET NOISE
+    def resetNoise(self):
+        self.noise_variance = 0
+
     def genVisor2(self):
         visor = self.render1.attach_new_node("visor")
         objects = [[None] * self.width for i in range(self.height)]
@@ -725,7 +726,6 @@ class World(DirectObject):
         x = 0.5
         offsetx = (1.55) / 2.00
         offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
-        #x,y = 0,0
         for i in range(0,self.height):
             for j in range(0,self.width):
                 cx = offsety + (2*y*j) + (y*(i%2))

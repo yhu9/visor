@@ -88,7 +88,8 @@ class World(DirectObject):
 
         #number of steps taken
         self.step_count = 0
-        self.noise_variance = 0.00
+        self.light_noise = 0.00
+        self.geom_noise = 0.00
         self.light_angle = 0
         self.visorparam = [self.width//2,self.height//2,self.width,self.height,0]                              #x,y,w,h,r
         self.shadowoff()
@@ -154,86 +155,13 @@ class World(DirectObject):
 
     #TASK FOR CALCULATING VISOR ACTIVATION MAP BASED ON CLOSED FORM SOLUTION
     def calcVisorTask(self,task):
-        #add noise to light vector and its direction
         self.getInfo()
-        lvec = self.lpos + np.random.normal(0,self.noise_variance,3) - np.random.normal(0,self.noise_variance,3)
+        lvec = self.lpos + np.random.normal(0,self.light_noise,3) - np.random.normal(0,self.light_noise,3)
 
         for geom,material in self.geompos:
             color = material.getDiffuse()
             if color[0] == 1 and color[1] == 0 and color[2] == 0: break
-
-        geom += np.random.normal(0,self.noise_variance,geom.shape)
-
-        bl = self.visorpos[0,0]
-        br = self.visorpos[0,self.width-1]
-        tl = self.visorpos[self.height-1,0]
-        tr = self.visorpos[self.height-1,self.width-1]
-        v1 = tr - tl
-        v2 = bl - tl
-
-        #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
-        #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
-        tl = np.hstack((tl,[1]))
-        tr = np.hstack((tr,[1]))
-        bl = np.hstack((bl,[1]))
-        br = np.hstack((br,[1]))
-        ins = np.stack((tl[1:],bl[1:],tr[1:]))
-        out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
-        A = np.matmul(np.linalg.inv(ins),out)
-
-        #get intersection of eye verticies with visor plane along the light ray
-        nvec = np.cross(v1,v2)  #normal to the visor
-        d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
-        intersection = geom + d[:,np.newaxis] * lvec
-        t1 = intersection[:,1:]
-
-        #get bounding box of the intersection points in 2d space collapsing the x axis
-        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why scale? cuz opencv can't handle floats
-        rect = cv2.minAreaRect(pnts.astype(np.int32))
-        pnt,dim,r = rect
-        x,y = pnt
-        w,h = dim
-        box = cv2.boxPoints(rect)   #br,bl,tl,tr
-        box = (box - 100000) / 100000
-
-        #get which visor hexagons activated
-        self.visormask *= 0
-        p1,p2,p3,p4 = box
-        m1 = (p1[1] - p2[1]) / (p1[0] - p2[0])
-        m2 = (p2[1] - p3[1]) / (p2[0] - p3[0])
-        m3 = (p3[1] - p4[1]) / (p3[0] - p4[0])
-        m4 = (p4[1] - p1[1]) / (p4[0] - p1[0])
-        l1 = lambda x,y: y <= m1 * (x - p1[0]) + p1[1] + 0.05
-        l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.07) + p2[1]
-        l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.05
-        l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.07) + p4[1]
-        for i in range(self.height):
-            for j in range(self.width):
-                hexagon = self.visorpos[i,j][1:]
-                c1 = l1(hexagon[0],hexagon[1])
-                c2 = l2(hexagon[0],hexagon[1])
-                c3 = l3(hexagon[0],hexagon[1])
-                c4 = l4(hexagon[0],hexagon[1])
-
-                if c1 and c2 and c3 and c4:
-                    self.visormask[i,j] = 1
-
-        self.shadowon()
-        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
-        cv2.waitKey(1)
-        return task.again
-
-    #MANUAL CALCULATION FOR THE VISOR ACTIVATION
-    def calcVisor(self):
-        self.getInfo()
-        lvec = self.lpos
-        lvec = self.lpos + np.random.normal(0,self.noise_variance,3) - np.random.normal(0,self.noise_variance,3)
-
-        for geom,material in self.geompos:
-            color = material.getDiffuse()
-            if color[0] == 1 and color[1] == 0 and color[2] == 0: break
-
-        geom += np.random.normal(0,self.noise_variance,geom.shape)
+        geom += np.random.normal(0,self.geom_noise,geom.shape)
 
         bl = self.visorpos[0,0]
         br = self.visorpos[0,self.width-1]
@@ -290,6 +218,87 @@ class World(DirectObject):
                     self.visormask[i,j] = 1
 
         self.shadowon()
+        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
+        cv2.waitKey(1)
+
+        return task.again
+
+    #MANUAL CALCULATION FOR THE VISOR ACTIVATION
+    def calcVisor(self, light_noise=0.0, geom_noise=0.0):
+        self.getInfo()
+        lvec = self.lpos + np.random.normal(0,light_noise,3)
+
+        '''
+        lpos_norm = self.lpos / np.linalg.norm(self.lpos)
+        for light_noise in [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]:
+            lvec_norm = (self.lpos + light_noise)/ np.linalg.norm(self.lpos + light_noise)
+            angle = np.arccos(np.dot(lpos_norm,lvec_norm))
+            angle = (angle * 180) / 3.14159
+            print(angle)
+        '''
+
+        for geom,material in self.geompos:
+            color = material.getDiffuse()
+            if color[0] == 1 and color[1] == 0 and color[2] == 0: break
+
+        geom += np.random.normal(0,geom_noise,geom.shape)
+
+        bl = self.visorpos[0,0]
+        br = self.visorpos[0,self.width-1]
+        tl = self.visorpos[self.height-1,0]
+        tr = self.visorpos[self.height-1,self.width-1]
+        v1 = tr - tl
+        v2 = bl - tl
+
+        #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
+        #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
+        tl = np.hstack((tl,[1]))
+        tr = np.hstack((tr,[1]))
+        bl = np.hstack((bl,[1]))
+        br = np.hstack((br,[1]))
+        ins = np.stack((tl[1:],bl[1:],tr[1:]))
+        out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
+        A = np.matmul(np.linalg.inv(ins),out)
+
+        #get intersection of eye verticies with visor plane along the light ray
+        nvec = np.cross(v1,v2)  #normal to the visor
+        d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
+        intersection = geom + d[:,np.newaxis] * lvec
+        t1 = intersection[:,1:]
+
+        #get bounding box of the intersection points in 2d space collapsing the x axis
+        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why scale? cuz opencv can't handle floats
+        rect = cv2.minAreaRect(pnts.astype(np.int32))
+        pnt,dim,r = rect
+        x,y = pnt
+        w,h = dim
+        box = cv2.boxPoints(rect)   #br,bl,tl,tr
+        box = (box - 100000) / 100000
+
+        #get which visor hexagons activated
+        self.visormask *= 0
+        p1,p2,p3,p4 = box
+        m1 = (p1[1] - p2[1]) / (p1[0] - p2[0])
+        m2 = (p2[1] - p3[1]) / (p2[0] - p3[0])
+        m3 = (p3[1] - p4[1]) / (p3[0] - p4[0])
+        m4 = (p4[1] - p1[1]) / (p4[0] - p1[0])
+        l1 = lambda x,y: y <= m1 * (x - p1[0]) + p1[1] + 0.04
+        l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.06) + p2[1]
+        l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.07
+        l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.06) + p4[1]
+        for i in range(self.height):
+            for j in range(self.width):
+                hexagon = self.visorpos[i,j][1:]
+                c1 = l1(hexagon[0],hexagon[1])
+                c2 = l2(hexagon[0],hexagon[1])
+                c3 = l3(hexagon[0],hexagon[1])
+                c4 = l4(hexagon[0],hexagon[1])
+
+                if c1 and c2 and c3 and c4:
+                    self.visormask[i,j] = 1
+
+        self.shadowon()
+        base.graphicsEngine.renderFrame()
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
@@ -514,11 +523,16 @@ class World(DirectObject):
     ##########################################################
     #SOME CONTROL SEQUENCES
     def addControls(self):
-        self.info =  TextNode('info')
-        self.info.setText("Noise: " + str(self.noise_variance))
-        textNodePath = aspect2d.attachNewNode(self.info)
-        textNodePath.setScale(0.10)
-        textNodePath.setPos(0.8,0,0.9)
+        self.info1 =  TextNode('info')
+        self.info1.setText("Light Noise: " + str(self.light_noise))
+        self.info2 = TextNode('info2')
+        self.info2.setText("Geom Noise: " + str(self.geom_noise))
+        textNodePath1 = aspect2d.attachNewNode(self.info1)
+        textNodePath2 = aspect2d.attachNewNode(self.info2)
+        textNodePath1.setScale(0.07)
+        textNodePath1.setPos(0.6,0,0.9)
+        textNodePath2.setScale(0.07)
+        textNodePath2.setPos(0.6,0,0.8)
 
         #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
         #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
@@ -526,8 +540,8 @@ class World(DirectObject):
         addInstructions(0.24, 's : toggleSun')
         addInstructions(0.30, 'd : toggle visor mode')
         addInstructions(0.36, 'p: toggle face pose')
-        addInstructions(0.42, '1: inc noise up')
-        addInstructions(0.48, '1: inc noise down')
+        addInstructions(0.42, '1: inc light noise up')
+        addInstructions(0.48, '2: inc light noise down')
         self.anim_flag = False
         self.accept('escape', self.exit)
         self.accept("a", self.putSunOnFace)
@@ -538,8 +552,10 @@ class World(DirectObject):
         self.accept("f12",base.screenshot,['recording/snapshot'])
         self.accept("tab", base.bufferViewer.toggleEnable)
         self.accept("p", self.addAnimation)
-        self.accept("1", self.incNoise,[0.01])
-        self.accept("2", self.incNoise,[-0.01])
+        self.accept("1", self.incLightNoise,[0.001])
+        self.accept("2", self.incLightNoise,[-0.001])
+        self.accept("3", self.incGeomNoise,[0.001])
+        self.accept("4", self.incGeomNoise,[-0.001])
         self.accept("r", self.resetNoise)
 
     def exit(self):
@@ -690,11 +706,10 @@ class World(DirectObject):
         return visor,next_state,reward,done
 
     def spinLightTask(self,task):
-        angleDegrees = (self.light_angle - 80)
-        angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.6 * cos(angleRadians * 4.0))
+        angleRadians = self.light_angle * (pi / 180.0)
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.20 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
-        self.light_angle += 5
+        self.light_angle += 2
         self.light.node().showFrustum()
         return task.again
 
@@ -724,13 +739,22 @@ class World(DirectObject):
             self.cam.lookAt(0,0,0)
 
     #INCREMENT NOISE VALUE
-    def incNoise(self,n):
-        self.noise_variance += n
-        self.info.setText("Noise: " + str(self.noise_variance))
+    def incLightNoise(self,n):
+        self.light_noise += n
+        self.info1.setText("Light Noise: " + str(self.light_noise))
+
+    #INCREMENT NOISE VALUE
+    def incGeomNoise(self,n):
+        self.geom_noise += n
+        self.geom_noise = max(0.00, self.geom_noise)
+        self.info2.setText("Geom Noise: " + str(self.geom_noise))
 
     #RESET NOISE
     def resetNoise(self):
-        self.noise_variance = 0
+        self.light_noise = 0.00
+        self.geom_noise = 0.00
+        self.info1.setText("Light Noise: " + str(self.light_noise))
+        self.info2.setText("Geom Noise: " + str(self.geom_noise))
 
     def genVisor2(self):
         visor = self.render1.attach_new_node("visor")

@@ -16,6 +16,7 @@ from env import World
 ################################################################################################
 parser = argparse.ArgumentParser()
 parser.add_argument('--test', action='store_const',const=True,default=True,help='testing flag')
+parser.add_argument('--noise', type=float,default=0.00,help='noise value. default is 0.00')
 opt = parser.parse_args()
 ################################################################################################
 ################################################################################################
@@ -25,7 +26,7 @@ opt = parser.parse_args()
 env = World()
 
 ##########################################################################
-def test(n_episodes=200, max_t=20, print_every=1):
+def test(n_episodes=200, max_t=20, print_every=1,noise1=0.00,noise2=0.00):
     scores_deque = deque(maxlen=20)
     scores = []
     best_scores = []
@@ -42,12 +43,10 @@ def test(n_episodes=200, max_t=20, print_every=1):
         #flag = True
         for t in range(max_t):
             #take one step in the environment using the action
-            #visor, s2 ,reward,done = env.step2_4(actions)
-            reward,done = env.calcVisor()
+            reward,done = env.calcVisor(light_noise=noise2,geom_noise=noise1)
 
             #get the reward for applying action on the prv state
             score += reward
-            #stopping condition
             if reward > 0.25:
                 avg_steps += t+1
                 solved += 1
@@ -64,19 +63,30 @@ def test(n_episodes=200, max_t=20, print_every=1):
         scores_deque.append(score)
         scores.append(score)
         score_average = np.mean(scores_deque)
-        if i_episode % print_every == 0:
-            print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
-                  .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
-    return scores,best_scores
+        #if i_episode % print_every == 0:
+        #    print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
+        #          .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
+    print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
+          .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
+    #return scores,best_scores
+    return solved / i_episode
 
 ##########################################################################
 
 if __name__ == '__main__':
     if opt.test:
-        scores, best_scores = test()
-        scores.sort()
-        best_scores.sort()
-        np.save('baseline_score.npy',best_scores)
+        noise1_vals = [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]
+        noise2_vals = [0.005,0.01,0.015,0.02,0.025,0.03,0.035,0.04,0.045]
+        for i in [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]:
+            vals = []
+            for _ in range(5):
+                score = test(noise1=0.00,noise2=i)
+                vals.append(score)
+            print('mode: ' + str(i) + ' mean score: ' + str(np.mean(vals)))
     else:
         scores = train()
+
+
+
+
 

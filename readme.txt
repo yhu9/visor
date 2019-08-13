@@ -1,5 +1,19 @@
-###########################################################################################
-###########################################################################################
+#Installation Instructions
+
+I highly recommend creating a virtual environment and doing the installation on anaconda since that is what I did. Any other installation methods will have to be glued together by yourself.
+
+1. Install Anaconda
+2. conda creeate --name visor python=3.5
+3. install pytorch via conda
+4. pip install --user panda3d==1.10.3
+5. pip install --user opencv-python
+6. conda install matplotlib
+7. pip install --user dlib
+8. pip install imutils
+9. pip install --ignore-installed --upgrade tensorflow-gpu
+10. pip install scipy
+
+
 				Face detection algorithms
 ###########################################################################################
 ###########################################################################################

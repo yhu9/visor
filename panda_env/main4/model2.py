@@ -170,8 +170,8 @@ class Model():
         #LOAD THE MODELS
         if load:
             print('MODEL' + load + ' LOADED')
-            self.model.load_state_dict(torch.load(load));
-            self.target_net.load_state_dict(torch.load(load));
+            self.model.load_state_dict(torch.load(load,map_location='cpu'));
+            self.target_net.load_state_dict(torch.load(load,map_location='cpu'));
         else:
             self.model.apply(init_weights)
             self.target_net.apply(init_weights)

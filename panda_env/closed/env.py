@@ -286,6 +286,7 @@ class World(DirectObject):
         l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.06) + p2[1]
         l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.07
         l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.06) + p4[1]
+
         for i in range(self.height):
             for j in range(self.width):
                 hexagon = self.visorpos[i,j][1:]

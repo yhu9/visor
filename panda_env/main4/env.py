@@ -649,7 +649,7 @@ class World(DirectObject):
         if self.visorparam[2] <= 2 or self.visorparam[3] <=2 or EYE < 0.5:
             r1 = -1
             r2 = -1
-        elif reward < 0.20:
+        elif reward < 0.25:
             r1 = reward - 1
             r2 = 0
         else:

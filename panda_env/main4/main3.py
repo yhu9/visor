@@ -82,8 +82,8 @@ def train(n_episodes=50000, max_t=10, print_every=1, save_every=20):
             agent.target_net.load_state_dict(agent.model.state_dict())
 
         if i_episode % print_every == 0:
-            print('\rEpisode {}, Average Score: {:.2f}, Time: {:.2f}, Solv: {:.2f}, Loss: {:.4f}'\
-                  .format(i_episode, score_average, time.time() - timestep, solv_avg, loss),end="\n")
+            print('\rEpisode {}, Average Score: {:.2f}, Time: {:.2f}, Solv: {:.2f}, Loss: {:.4f}, Best: {:.2f}'\
+                  .format(i_episode, score_average, time.time() - timestep, solv_avg, loss, best),end="\n")
 
         if solv_avg >= best and len(solved_deque) >= 200:
             print('SAVED')
@@ -93,7 +93,7 @@ def train(n_episodes=50000, max_t=10, print_every=1, save_every=20):
 
 def test(n_episodes=200, max_t=20, print_every=1):
 
-    scores_deque = deque(maxlen=20)
+    scores_deque = deque(maxlen=200)
     scores = []
     best_scores = []
 
@@ -117,7 +117,7 @@ def test(n_episodes=200, max_t=20, print_every=1):
             #get the reward for applying action on the prv state
             score += r2
             #stopping condition
-            if r2> 0.25:
+            if r2 >= 0.25:
                 avg_steps += t+1
                 solved += 1
 
@@ -126,9 +126,8 @@ def test(n_episodes=200, max_t=20, print_every=1):
 
             if done: break
 
-
         if solved > 0: avg_step = avg_steps / solved
-        else: avg_step = 0
+        else: avg_step = -1
 
         best_scores.append(best)
         scores_deque.append(score)

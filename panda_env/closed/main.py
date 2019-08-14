@@ -39,11 +39,14 @@ def test(n_episodes=200, max_t=20, print_every=1,noise1=0.00,noise2=0.00):
         state = env.reset(manual_pose=i_episode)
         score = 0
         best = -1
-        timestep = time.time()
+        timesteps = []
         #flag = True
         for t in range(max_t):
             #take one step in the environment using the action
+
+            timestep = time.time()
             reward,done = env.calcVisor(light_noise=noise2,geom_noise=noise1)
+            timesteps.append(time.time() - timestep)
 
             #get the reward for applying action on the prv state
             score += reward
@@ -64,10 +67,8 @@ def test(n_episodes=200, max_t=20, print_every=1,noise1=0.00,noise2=0.00):
         scores.append(score)
         score_average = np.mean(scores_deque)
         #if i_episode % print_every == 0:
-        #    print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
-        #          .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
-    print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}'\
-          .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step)), end="\n")
+    print('\rEpisode {}, Average Score: {:.2f}, Max: {:.2f}, Min: {:.2f}, Solved: {:.2f}, AvgStps: {:.2f}, AvgTime: {:.4f}'\
+          .format(i_episode, score_average, np.max(scores), np.min(scores), (solved/i_episode),(avg_step), np.mean(timesteps)), end="\n")
     #return scores,best_scores
     return solved / i_episode
 

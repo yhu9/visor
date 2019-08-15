@@ -114,15 +114,14 @@ class Model():
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 32
-        self.GAMMA = 0.99
+        self.GAMMA = 0.95
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 10000
-        self.TARGET_UPDATE = 30
+        self.TARGET_UPDATE = 20
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000,device=self.device)
-
         print(self.device)
 
         #OUR NETWORK
@@ -134,14 +133,18 @@ class Model():
         #LOAD THE MODULES
         if load:
             print('MODEL' + load + ' LOADED')
-            self.model.load_state_dict(torch.load(load));
-            self.target_net.load_state_dict(torch.load(load));
+            if self.device == 'cpu':
+                self.model.load_state_dict(torch.load(load,map_location='cpu'));
+                self.target_net.load_state_dict(torch.load(load,map_location='cpu'));
+            else:
+                self.model.load_state_dict(torch.load(load));
+                self.target_net.load_state_dict(torch.load(load));
         else:
             self.model.apply(init_weights)
             self.target_net.apply(init_weights)
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
-        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001,betas=(0.0,0.9))
+        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.00001)
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 

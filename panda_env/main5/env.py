@@ -384,11 +384,11 @@ class World(DirectObject):
         #get the initial state as two copies of the first image
         cur_frame = self.getFrame()
 
-        self.imgstates = deque(maxlen=2)
-        self.visorstates = deque(maxlen=2)
+        self.imgstates = deque(maxlen=3)
+        self.visorstates = deque(maxlen=3)
         self.eye_mask = eye_mask.astype(np.float32)
-        for i in range(2): self.imgstates.append(np.dstack((cur_frame,shadow_mask.astype(np.float32))))
-        for i in range(2): self.visorstates.append(self.visorparam.copy())
+        for i in range(3): self.imgstates.append(np.dstack((cur_frame,shadow_mask.astype(np.float32))))
+        for i in range(3): self.visorstates.append(self.visorparam.copy())
 
         visor,frame = self.getstate()
 
@@ -591,17 +591,19 @@ class World(DirectObject):
     #GRAB THE CURRENT STATE
     def getstate(self):
         h,w = self.eye_mask.shape[:2]
-        d = 9
+        d = 13
         frame = np.zeros((h,w,d))
 
         frame[:,:,0] = self.eye_mask.copy()
         frame[:,:,1:5] = self.imgstates[0]
         frame[:,:,5:9] = self.imgstates[1]
+        frame[:,:,9:13] = self.imgstates[2]
         state = frame
 
         visor = []
         visor += self.visorstates[0]
         visor += self.visorstates[1]
+        visor += self.visorstates[2]
 
         return visor,state
 
@@ -649,10 +651,10 @@ class World(DirectObject):
             r2 = -1
         elif reward < 0.25:
             r1 = reward - 1
-            r2 = 0
+            r2 = -0.1
         else:
             r1 = reward - 1
-            r2 = reward
+            r2 = reward + EYE
 
         #set the next state
         visor, next_state = self.getstate()
@@ -671,7 +673,7 @@ class World(DirectObject):
     #MANUAL VIRTUAL ENV CONTROLLER
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.2 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
 

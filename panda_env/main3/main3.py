@@ -75,8 +75,8 @@ def train(n_episodes=40000, max_t=10,  save_every=20):
         if i_episode % save_every == 0:
             agent.target_net.load_state_dict(agent.model.state_dict())
 
-        print('\rEpisode {}, Average Score: {:.2f}, Time: {:.2f}, Solv: {:.2f}, Loss: {:.4f}'\
-              .format(i_episode, score_average, time.time() - timestep, solv_avg, loss),end="\n")
+        print('\rEpisode {}, Average Score: {:.2f}, Time: {:.2f}, Solv: {:.2f}, Loss: {:.4f}, Best: {:.2f}'\
+              .format(i_episode, score_average, time.time() - timestep, solv_avg, loss, best),end="\n")
 
         if solv_avg >= best and len(solved_deque) >= 200:
             print('SAVED')

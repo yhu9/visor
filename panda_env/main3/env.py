@@ -682,10 +682,10 @@ class World(DirectObject):
             r2 = -1
         elif reward < 0.25:
             r1 = reward - 1
-            r2 = 0
+            r2 = -0.1
         else:
             r1 = reward - 1
-            r2 = reward
+            r2 = reward + 1
 
         #set the next state
         next_state = self.getstate3(mask.astype(np.float32))
@@ -695,7 +695,7 @@ class World(DirectObject):
     def spinLightTask(self,task):
         angleDegrees = (self.light_angle - 80)
         angleRadians = angleDegrees * (pi / 180.0)
-        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.3 + 0.5 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.2 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += 5
         return task.again

@@ -2,14 +2,16 @@ import sys
 import os
 import time
 
+#OPEN SOURCE INSTALLS
 import cv2
 import matplotlib.pyplot as plt
 import imageio
 import numpy as np
 from imutils import face_utils
-import face_alignment
-
 import dlib
+
+#Git hub repo installs
+import face_alignment
 from faced import FaceDetector
 from faced.utils import annotate_image
 
@@ -38,9 +40,6 @@ class ShadowDetector():
     def get_shadow2(self,rgb):
         mog_mask = self.mog.apply(rgb)
         return mog_mask == 127
-
-        #plt.imshow(mog_mask)
-        #plt.show()
 
 #################################################################################################
 #################################################################################################

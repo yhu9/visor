@@ -1,31 +1,26 @@
-"""
-    Author: Masa Hu
-    Email: huynshen@msu.edu
 
-    env.py is the environment definition of the RL agent. This module contains several functions mimicking the functionalities mentioned by openai gym, in case we would like to one day test open source deep RL algorithms on this custom environment. However, this module can also be run as main and allows for an interactive session with the user on the 3D environment. If the assets are not in the correct directory this module will not work correctly.
-"""
-
-#NATIVE LIBRARY IMPORTS
 import random
 from math import pi, sin, cos,sqrt
 import numpy as np
 from collections import deque
 
-#OPEN SOURCE LIBRARY IMPORTS
+#CUSTOM MODULES
+from utils import ShadowDetector
+from utils import LM_Detector
+
+#OTHER LIBRARIES
 import cv2
+
 #PANDA3D
 from panda3d.core import *
 from direct.task import Task
 import direct.directbase.DirectStart
+#from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
 from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
 from panda3d.direct import throw_new_frame
-
-#CUSTOM MODULES
-from utils import ShadowDetector
-from utils import LM_Detector
 
 ################################################################################################
 ################################################################################################
@@ -88,24 +83,15 @@ class World(DirectObject):
         self.action_high = np.array([self.width,self.height,self.width,self.height,3.14/2])
         print('Action high: ', self.action_high)
 
-        #initialize the scene
-        self.init_scene()
-
         #number of steps taken
         self.step_count = 0
-        self.light_noise = 0.00
-        self.geom_noise = 0.00
-        self.light_angle = 0
-        self.visorparam = [self.width//2,self.height//2,self.width,self.height,0]                              #x,y,w,h,r
-        self.shadowoff()
-        self.noshadow_img = self.getFrame_notex()
 
+        #initialize the scene
+        self.init_scene()
         self.incrementCameraPosition(0)
         self.addControls()
         self.reset(manual_pose=1)
         self.visorpos = self.getVisorData()
-        self.visorpos[:,:,1] -= 0.15
-        self.visorpos[:,:,2] -= 0.05
 
         #ADD TASKS THAT RUN IF THE ENVIRONMENT IS IN A LOOP
         taskMgr.doMethodLater(.1,self.viewReward,"drawReward")
@@ -118,7 +104,7 @@ class World(DirectObject):
         self.lpos = self.getLightData()
         self.geompos = self.getVertexData()
 
-    #GET 3D VISOR COORDINATES IN WORLD COORDINATE SPACE
+    #GET THE VISOR VERTEX INFORMATION IN 3D WORLD SPACE
     def getVisorData(self):
         data = [[None] * len(self.hexes[i]) for i in range(len(self.hexes))]
         for i in range(len(self.hexes)):
@@ -126,12 +112,12 @@ class World(DirectObject):
                 data[i][j] = self.hexes[i][j].getPos(self.render1)
         return np.array(data)
 
-    #GET 3D LIGHT COORDINATES IN WORLD COORDINATE SPACE
+    #GET THE LIGHT POSITION. LIGHT IS POINTING TOWARDS 0,0,0 ALWAYS
     def getLightData(self):
         lpos = self.light.getPos(self.render1)
         return np.array([lpos[0],lpos[1],lpos[2]])
 
-    #GET 3D EYE REGION COORDINATES IN WORLD COORDINATE SPACE BASED ON COLOR
+    #ACQUIRE VERTEX INFORMATION OF THE EYE LOCATION IN 3D WORLD SPACE
     def getVertexData(self):
         self.dennis2.flattenLight()
         def processPrim(prim,vertex,data):
@@ -156,17 +142,16 @@ class World(DirectObject):
                 processPrim(p,vdata,data)
             data = np.array(data[:data.index(None)])
             geoms.append((data[:,:3],m))
+
         return geoms
 
-    #TASK FOR CALCULATING VISOR ACTIVATION MAP BASED ON CLOSED FORM SOLUTION
-    def calcVisorTask(self,task):
+    #DETERMINE CLOSED FORM VISOR LOCATION TO ACTIVATE
+    def calcVisor(self,task):
         self.getInfo()
-        lvec = self.lpos + np.random.normal(0,self.light_noise,3) - np.random.normal(0,self.light_noise,3)
-
+        lvec = self.lpos
         for geom,material in self.geompos:
             color = material.getDiffuse()
             if color[0] == 1 and color[1] == 0 and color[2] == 0: break
-        geom += np.random.normal(0,self.geom_noise,geom.shape)
 
         bl = self.visorpos[0,0]
         br = self.visorpos[0,self.width-1]
@@ -191,136 +176,50 @@ class World(DirectObject):
         intersection = geom + d[:,np.newaxis] * lvec
         t1 = intersection[:,1:]
 
+        #(OPTIONAL VISUALIZATION)
+        img = np.zeros((500,500,3))
+        b1 = tl * 100 + 100
+        b2 = tr * 100 + 100
+        b3 = bl * 100 + 100
+        b4 = br * 100 + 100
+        vbox = np.array([b2[1:-1],b1[1:-1],b3[1:-1],b4[1:-1]])
+        #vbox = np.array([b2[1:],b1[1:],b3[1:],b4[1:]])
+        vbox = np.int0(vbox)
+        cv2.fillConvexPoly(img,vbox,(255,255,255))
+        for p in t1:
+            pnt = (p * 100 + 100).astype(np.uint16)
+            cv2.circle(img,(pnt[0],pnt[1]),1,(0,255,0),-1)
+        cv2.imshow('img',img)
+        cv2.waitKey(1)
+
         #get bounding box of the intersection points in 2d space collapsing the x axis
-        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why scale? cuz opencv can't handle floats
+        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why 10^-5 PERCISION
         rect = cv2.minAreaRect(pnts.astype(np.int32))
         pnt,dim,r = rect
         x,y = pnt
         w,h = dim
-        box = cv2.boxPoints(rect)   #br,bl,tl,tr
-        box = (box - 100000) / 100000
+        box = cv2.boxPoints(rect)   #tr,tl,bl,br
 
-        #get which visor hexagons activated
+        #TRANSFORM INTERSECTION WORLD COORD TO VISOR MASK
+        box = (box - 100000) / 100000           #DOWNSCALE BY PERCISION
+        box = np.hstack((box,np.ones((box.shape[0],1))))
+        box = np.matmul(box,A)
+        xpad = 2
+        ypad = 2
+        box = box[:,:2] + np.array([[xpad,-ypad],[-xpad,-ypad],[-xpad,ypad],[xpad,ypad]])
+        box = np.rint(box)
+        box[:,0] = -box[:,0] + self.width
+        box[:,0] -= 3
+        box = np.int0(box)
         self.visormask *= 0
-        p1,p2,p3,p4 = box
-        m1 = (p1[1] - p2[1]) / (p1[0] - p2[0])
-        m2 = (p2[1] - p3[1]) / (p2[0] - p3[0])
-        m3 = (p3[1] - p4[1]) / (p3[0] - p4[0])
-        m4 = (p4[1] - p1[1]) / (p4[0] - p1[0])
-        l1 = lambda x,y: y <= m1 * (x - p1[0]) + p1[1] + 0.04
-        l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.06) + p2[1]
-        l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.07
-        l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.06) + p4[1]
-        for i in range(self.height):
-            for j in range(self.width):
-                hexagon = self.visorpos[i,j][1:]
-                c1 = l1(hexagon[0],hexagon[1])
-                c2 = l2(hexagon[0],hexagon[1])
-                c3 = l3(hexagon[0],hexagon[1])
-                c4 = l4(hexagon[0],hexagon[1])
-
-                if c1 and c2 and c3 and c4:
-                    self.visormask[i,j] = 1
-
+        cv2.fillConvexPoly(self.visormask,box,(1))
         self.shadowon()
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
         return task.again
 
-    #MANUAL CALCULATION FOR THE VISOR ACTIVATION
-    def calcVisor(self, light_noise=0.0, geom_noise=0.0):
-        self.getInfo()
-        lvec = self.lpos + np.random.normal(0,light_noise,3)
-
-        '''
-        lpos_norm = self.lpos / np.linalg.norm(self.lpos)
-        for light_noise in [0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8]:
-            lvec_norm = (self.lpos + light_noise)/ np.linalg.norm(self.lpos + light_noise)
-            angle = np.arccos(np.dot(lpos_norm,lvec_norm))
-            angle = (angle * 180) / 3.14159
-            print(angle)
-        '''
-
-        for geom,material in self.geompos:
-            color = material.getDiffuse()
-            if color[0] == 1 and color[1] == 0 and color[2] == 0: break
-
-        geom += np.random.normal(0,geom_noise,geom.shape)
-
-        bl = self.visorpos[0,0]
-        br = self.visorpos[0,self.width-1]
-        tl = self.visorpos[self.height-1,0]
-        tr = self.visorpos[self.height-1,self.width-1]
-        v1 = tr - tl
-        v2 = bl - tl
-
-        #GET AFFINE TRANSFORMATION MATRIX FROM WORLD COORDINATE TO VISOR MASK
-        #https://stackoverflow.com/questions/22954239/given-three-points-compute-affine-transformation
-        tl = np.hstack((tl,[1]))
-        tr = np.hstack((tr,[1]))
-        bl = np.hstack((bl,[1]))
-        br = np.hstack((br,[1]))
-        ins = np.stack((tl[1:],bl[1:],tr[1:]))
-        out = np.array([[self.width-1,self.height-1],[self.width-1,0],[0,self.height-1]])
-        A = np.matmul(np.linalg.inv(ins),out)
-
-        #get intersection of eye verticies with visor plane along the light ray
-        nvec = np.cross(v1,v2)  #normal to the visor
-        d = np.dot(tl[:-1] + -1 * geom,nvec) / np.dot(lvec,nvec)
-        intersection = geom + d[:,np.newaxis] * lvec
-        t1 = intersection[:,1:]
-
-        #get bounding box of the intersection points in 2d space collapsing the x axis
-        pnts = t1[:,np.newaxis,:] * 100000 + 100000       #why scale? cuz opencv can't handle floats
-        rect = cv2.minAreaRect(pnts.astype(np.int32))
-        pnt,dim,r = rect
-        x,y = pnt
-        w,h = dim
-        box = cv2.boxPoints(rect)   #br,bl,tl,tr
-        box = (box - 100000) / 100000
-
-        #get which visor hexagons activated
-        self.visormask *= 0
-        p1,p2,p3,p4 = box
-        m1 = (p1[1] - p2[1]) / (p1[0] - p2[0])
-        m2 = (p2[1] - p3[1]) / (p2[0] - p3[0])
-        m3 = (p3[1] - p4[1]) / (p3[0] - p4[0])
-        m4 = (p4[1] - p1[1]) / (p4[0] - p1[0])
-        l1 = lambda x,y: y <= m1 * (x - p1[0]) + p1[1] + 0.04
-        l2 = lambda x,y: y >= m2 * (x - p2[0] + 0.06) + p2[1]
-        l3 = lambda x,y: y >= m3 * (x - p3[0]) + p3[1] - 0.07
-        l4 = lambda x,y: y <= m4 * (x - p4[0] - 0.06) + p4[1]
-
-        for i in range(self.height):
-            for j in range(self.width):
-                hexagon = self.visorpos[i,j][1:]
-                c1 = l1(hexagon[0],hexagon[1])
-                c2 = l2(hexagon[0],hexagon[1])
-                c3 = l3(hexagon[0],hexagon[1])
-                c4 = l4(hexagon[0],hexagon[1])
-
-                if c1 and c2 and c3 and c4:
-                    self.visormask[i,j] = 1
-
-        self.shadowon()
-        base.graphicsEngine.renderFrame()
-        cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1] * 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
-        cv2.waitKey(1)
-
-        reward,eye_mask,shadow_mask = self.genRewardGT()
-        EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
-        done = self.step_count >= 10 or reward > 0.25 or self.visorparam[2] <= 2 or self.visorparam[3] <= 2 or EYE < 0.5
-        if reward >= 0.25:
-            reward = 1 + reward
-        elif reward < 0.25:
-            reward = 0
-        if self.visorparam[2] <= 2 or self.visorparam[3] <=2 or EYE < 0.5:
-            reward = -1
-
-        return reward, done
-
-    #VISUALIZE REWARD FUNCTION
+    #DRAW REWARD FOR VISUALIZATION
     def drawReward(self,params,eye_mask,shadow,rgb,lm,IOU,EYE,reward):
         h,w,d = rgb.shape
         img = np.zeros((h,w+100,d))
@@ -345,7 +244,7 @@ class World(DirectObject):
         cv2.waitKey(10)
 
     #REWARD MAP GENERATION GIVEN STATE S
-    def genRewardGT(self):
+    def genRewardGT2(self):
         shadow_img = self.getFrame_notex()
         noshadow = (self.noshadow_img * 255).astype(np.uint8)
         shadow = (shadow_img * 255).astype(np.uint8)
@@ -356,6 +255,33 @@ class World(DirectObject):
 
         IOU = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(np.logical_or(eye_mask,shadow_mask))
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
+        threshold = IOU + EYE
+
+        #reward
+        if threshold > 1.2:
+            reward,flag = threshold, True
+        else:
+            reward,flag = -0.1, self.step_count == 10
+
+        #DRAW THE SEMANTIC MASKS "OPTIONAL"
+        self.drawReward(self.visorparam,eye_mask,shadow_mask,shadow,lm,IOU,EYE,reward)
+
+        return reward, flag, threshold
+
+    #REWARD MAP GENERATION GIVEN STATE S
+    def genRewardGT(self):
+        shadow_img = self.getFrame_notex()
+        noshadow = (self.noshadow_img * 255).astype(np.uint8)
+        shadow = (shadow_img * 255).astype(np.uint8)
+
+        eye_mask = self.lmfunc.get_eyesGT(noshadow)     #((cx,cy),(h,w),rotation)
+        shadow_mask = self.shadowfunc.get_shadowgt(shadow)
+        eye_and_shadow = np.logical_and(eye_mask,shadow_mask)
+        eye_or_shadow = np.logical_or(eye_mask,shadow_mask)
+        lm = np.zeros((5,2)).astype(np.uint8)
+
+        IOU = np.sum(eye_and_shadow) / np.sum(eye_or_shadow)
+        EYE = np.sum(eye_and_shadow) / np.sum(eye_mask)
         thresh = IOU
 
         #DRAW THE SEMANTIC MASKS "OPTIONAL"
@@ -400,6 +326,41 @@ class World(DirectObject):
         else: poseid = random.randint(1,200)
         self.dennis.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
         self.dennis2.pose('head_movement',poseid)     #CHOOSE A RANDOM POSE
+        self.light_angle = 0
+        self.incLightPos(speed=0)                                         #PUT LIGHT IN RANDOM POSITION
+
+        #get image without shadow
+        self.shadowoff()
+        self.noshadow_img = self.getFrame_notex()
+
+        #init the visor to the same position always
+        self.visorparam = [self.width//2,self.height//2,self.width//2,self.height//2,0]                              #x,y,w,h,r              #INITIAL VISOR POSITION IS ALWAYS THE SAME
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
+
+        #APPLY VISOR MASK
+        self.shadowon()
+
+        #get the initial state as two copies of the first image
+        self.prv_frame = self.getFrame()
+        cur_frame = self.prv_frame
+        h,w = cur_frame.shape[:2]
+        frame = np.zeros((h,w,6))
+        frame[:,:,:3] = self.prv_frame
+        frame[:,:,3:] = cur_frame
+        state = frame
+        return state
+
+    #RESET THE ENVIRONMENT
+    def reset2_4(self,manual_pose=False):
+        self.step_count = 1
+        if manual_pose: poseid = manual_pose
+        else: poseid = random.randint(1,200)
+        self.dennis.pose('head_movement',poseid)
+        self.dennis2.pose('head_movement',poseid)
         self.incLightPos(speed=2)                                         #PUT LIGHT IN RANDOM POSITION
 
         #get current situation
@@ -407,6 +368,11 @@ class World(DirectObject):
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
         if EYE <= 0.5:
             self.visorparam = [self.width //2, self.height //2, 19,9,0]
+        rot_rect = ((self.visorparam[0],self.visorparam[1]),(self.visorparam[2],self.visorparam[3]),self.visorparam[4])
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+        self.visormask *= 0
+        cv2.fillConvexPoly(self.visormask,box,(1))
 
         #get image without shadow
         self.shadowoff()
@@ -416,22 +382,21 @@ class World(DirectObject):
         self.shadowon()
 
         #get the initial state as two copies of the first image
-        base.graphicsEngine.renderFrame()
-        self.prv_frame = self.getFrame()
-        cur_frame = self.prv_frame
-        h,w = cur_frame.shape[:2]
-        frame = np.zeros((h,w,8))
+        cur_frame = self.getFrame()
 
-        frame[:,:,:3] = self.prv_frame
-        frame[:,:,3:6] = cur_frame
-        frame[:,:,6] = eye_mask.astype(np.float32)
-        frame[:,:,7] = shadow_mask.astype(np.float32)
-        state = frame
+        self.imgstates = deque(maxlen=3)
+        self.visorstates = deque(maxlen=3)
+        self.eye_mask = eye_mask.astype(np.float32)
+        for i in range(3): self.imgstates.append(np.dstack((cur_frame,shadow_mask.astype(np.float32))))
+        for i in range(3): self.visorstates.append(self.visorparam.copy())
 
-        return np.array(self.visorparam) / 19.0, state
+        visor,frame = self.getstate()
+
+        return np.array(visor) / 19.0, frame
 
     #INITIALIZE THE 3D ENVIRONMENT
     def init_scene(self):
+
         #GENERATE SECOND WINDOW TO SHOW MATERIAL REGIONS
         self.win2 = base.openWindow()
         displayRegion = self.win2.makeDisplayRegion()
@@ -529,28 +494,16 @@ class World(DirectObject):
     ##########################################################
     #SOME CONTROL SEQUENCES
     def addControls(self):
-        self.info1 =  TextNode('info')
-        self.info1.setText("Light Noise: " + str(self.light_noise))
-        self.info2 = TextNode('info2')
-        self.info2.setText("Geom Noise: " + str(self.geom_noise))
-        textNodePath1 = aspect2d.attachNewNode(self.info1)
-        textNodePath2 = aspect2d.attachNewNode(self.info2)
-        textNodePath1.setScale(0.07)
-        textNodePath1.setPos(0.6,0,0.9)
-        textNodePath2.setScale(0.07)
-        textNodePath2.setPos(0.6,0,0.8)
-
         #self.inst_p = addInstructions(0.06, 'up/down arrow: zoom in/out')
         #self.inst_x = addInstructions(0.12, 'Left/Right Arrow : switch camera angles')
-        addInstructions(0.18, 'a : put sun on face')
-        addInstructions(0.24, 's : toggleSun')
-        addInstructions(0.30, 'd : toggle visor mode')
-        addInstructions(0.36, 'p: toggle face pose')
-        addInstructions(0.42, '1: inc light noise up')
-        addInstructions(0.48, '2: inc light noise down')
+        #addInstructions(0.18, 'a : put sun on face')
+        #addInstructions(0.24, 's : toggleSun')
+        #addInstructions(0.30, 'd : toggle visor')
+        #addInstructions(0.36, 'v: View the Depth-Texture results')
+        #addInstructions(0.42, 'tab : view buffer')
         self.anim_flag = False
         self.accept('escape', self.exit)
-        self.accept("a", self.putSunOnFace)
+        #self.accept("a", self.putSunOnFace)
         self.accept("d", self.toggleVisor,[1])
         self.accept("r", self.recordScreen)
         self.accept("arrow_left", self.incrementCameraPosition, [-1])
@@ -558,11 +511,6 @@ class World(DirectObject):
         self.accept("f12",base.screenshot,['recording/snapshot'])
         self.accept("tab", base.bufferViewer.toggleEnable)
         self.accept("p", self.addAnimation)
-        self.accept("1", self.incLightNoise,[0.1])
-        self.accept("2", self.incLightNoise,[-0.1])
-        self.accept("3", self.incGeomNoise,[0.001])
-        self.accept("4", self.incGeomNoise,[-0.001])
-        self.accept("r", self.resetNoise)
 
     def exit(self):
         quit()
@@ -590,13 +538,13 @@ class World(DirectObject):
             taskMgr.remove('random controller')
         if (self.visorMode == 1):
             taskMgr.remove("random controller")
-            taskMgr.doMethodLater(0.1,self.calcVisorTask,"calcVisorTask")
+            taskMgr.doMethodLater(0.1,self.calcVisor,"calcVisor")
             for row in self.hexes:
                 for h in row:
                     h.show()
             render.show()
         if (self.visorMode == 2):
-            taskMgr.remove('calcVisorTask')
+            taskMgr.remove('calcVisor')
             taskMgr.doMethodLater(0.5,self.randomVisor,'random controller')
 
     def recordScreen(self):
@@ -640,34 +588,29 @@ class World(DirectObject):
                 else:
                     self.hexes[i][j].hide()
 
-    def getstate(self,prv_frame,cur_frame):
-        h,w = cur_frame.shape[:2]
-        d = 6
+    #GRAB THE CURRENT STATE
+    def getstate(self):
+        h,w = self.eye_mask.shape[:2]
+        d = 13
         frame = np.zeros((h,w,d))
-        frame[:,:,:3] = prv_frame
-        frame[:,:,3:] = cur_frame
-        state = frame
-        return state
 
-    #get state
-    def getstate2(self,prv_frame,cur_frame,eye_mask,shadow_mask):
-        h,w = cur_frame.shape[:2]
-        d = 8
-        frame = np.zeros((h,w,d))
-        frame[:,:,:3] = prv_frame
-        frame[:,:,3:6] = cur_frame
-        frame[:,:,6] = eye_mask.astype(np.float32)
-        frame[:,:,7] = shadow_mask.astype(np.float32)
+        frame[:,:,0] = self.eye_mask.copy()
+        frame[:,:,1:5] = self.imgstates[0]
+        frame[:,:,5:9] = self.imgstates[1]
+        frame[:,:,9:13] = self.imgstates[2]
         state = frame
-        return state
+
+        visor = []
+        visor += self.visorstates[0]
+        visor += self.visorstates[1]
+        visor += self.visorstates[2]
+
+        return visor,state
 
     #take a possible of 10 actions to move x,y,w,h,r up or down
     #and update the visor mask accordingly
     def step2_4(self,actions,speed=1):
         self.step_count += 1
-        visor = np.array(self.visorparam)
-        visor = visor / 19.0
-        rewardpre,_,_= self.genRewardGT()
 
         for i,a in enumerate(actions):
             if i == 4:
@@ -690,44 +633,54 @@ class World(DirectObject):
 
         self.shadowon()
         cur_frame = self.getFrame()
-        #cv2.imshow('prv',(self.prv_frame * 255).astype(np.uint8))
-        #cv2.imshow('cur',(cur_frame*255).astype(np.uint8))
         cv2.imshow('visormask',cv2.resize((self.visormask[:,::-1]* 255).astype(np.uint8), (self.width*10,self.height*10), interpolation = cv2.INTER_LINEAR))
         cv2.waitKey(1)
 
-        #get next state and reward
+        #get next state
         reward,eye_mask,shadow_mask = self.genRewardGT()
+
+        #push next state
+        self.imgstates.append(np.dstack((cur_frame,shadow_mask)))
+        self.visorstates.append(self.visorparam.copy())
+
+        #get the reward
         EYE = np.sum(np.logical_and(eye_mask,shadow_mask)) / np.sum(eye_mask)
-        #done = (self.step_count >= 10) or (reward == 0.0)
         done = self.step_count >= 10 or reward > 0.25 or self.visorparam[2] <= 2 or self.visorparam[3] <= 2 or EYE < 0.5
-        if reward > 0.25:
-            reward = 1 + 2 * reward
         if self.visorparam[2] <= 2 or self.visorparam[3] <=2 or EYE < 0.5:
-            reward = -1
+            r1 = -1
+            r2 = -1
+        elif reward < 0.25:
+            r1 = reward - 1
+            r2 = -0.1
+        else:
+            r1 = reward - 1
+            r2 = reward + 1
 
         #set the next state
-        next_state = self.getstate2(self.prv_frame,cur_frame,eye_mask,shadow_mask)
-        self.prv_frame = cur_frame.copy()
+        visor, next_state = self.getstate()
 
-        return visor,next_state,reward,done
+        return visor,next_state,r1,r2,done
 
+    #FOR VIRTUAL ENVIRONMENT DEMO
     def spinLightTask(self,task):
-        angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.20 + 0.1 * cos(angleRadians * 4.0))
+        angleDegrees = (self.light_angle - 80)
+        angleRadians = angleDegrees * (pi / 180.0)
+        self.light.setPos(-15.0,2+3.0 * cos(angleRadians),2.2 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
-        self.light_angle += 2
-        self.light.node().showFrustum()
+        self.light_angle += 5
         return task.again
 
-    ###########################################################################################################
-    #MANUAL CONTROL FUNCTIONS
-    ###########################################################################################################
-
+    #MANUAL VIRTUAL ENV CONTROLLER
     def incLightPos(self,speed=2):
         angleRadians = self.light_angle * (pi / 180.0)
-        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.20 + 0.1 * cos(angleRadians * 4.0))
+        self.light.setPos(-15.0,2 + 3.0 * cos(angleRadians),2.2 + 0.1 * cos(angleRadians * 4.0))
         self.light.lookAt(0,0,0)
         self.light_angle += speed
+
+    #MANUAL VIRTUAL ENV CONTROLLER
+    def incCarPos(self,speed):
+        self.car_x += (self.car_x + speed) % 180
+        self.car.setY(sin((self.car_x)* pi / 180) * 0.1 )
 
     def incrementCameraPosition(self,n):
         self.cameraSelection = (self.cameraSelection + n) % 3
@@ -741,26 +694,8 @@ class World(DirectObject):
             self.cam.lookAt(-3,-0.2,2.69)
 
         if (self.cameraSelection == 2):
-            self.cam.setPos(-20, 0, 7)
+            self.cam.setPos(self.light.getPos())
             self.cam.lookAt(0,0,0)
-
-    #INCREMENT NOISE VALUE
-    def incLightNoise(self,n):
-        self.light_noise += n
-        self.info1.setText("Light Noise: " + str(self.light_noise))
-
-    #INCREMENT NOISE VALUE
-    def incGeomNoise(self,n):
-        self.geom_noise += n
-        self.geom_noise = max(0.00, self.geom_noise)
-        self.info2.setText("Geom Noise: " + str(self.geom_noise))
-
-    #RESET NOISE
-    def resetNoise(self):
-        self.light_noise = 0.00
-        self.geom_noise = 0.00
-        self.info1.setText("Light Noise: " + str(self.light_noise))
-        self.info2.setText("Geom Noise: " + str(self.geom_noise))
 
     def genVisor2(self):
         visor = self.render1.attach_new_node("visor")
@@ -770,6 +705,7 @@ class World(DirectObject):
         x = 0.5
         offsetx = (1.55) / 2.00
         offsety = (sqrt(1 - (offsetx * offsetx)) + 1) / 2.00
+        #x,y = 0,0
         for i in range(0,self.height):
             for j in range(0,self.width):
                 cx = offsety + (2*y*j) + (y*(i%2))

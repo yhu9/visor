@@ -1,16 +1,26 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
+
+    tools3.py is a simple overview of the different techniques we investigated on 2d/3d landmark localization, face detection,
+    and shadow detection. No AI solution was investigated on shadow detection as all state of the art approaches involving AI
+    required GPU capabilities to run efficiently, while still performing sub-optimally.
+
+    you can run tools3.py as main to see a small demo
+"""
+
+#Native library imports
 import sys
 import os
 import time
 
-#OPEN SOURCE INSTALLS
+#OPEN SOURCE IMPORTS
 import cv2
 import matplotlib.pyplot as plt
 import imageio
 import numpy as np
 from imutils import face_utils
 import dlib
-
-#Git hub repo installs
 import face_alignment
 from faced import FaceDetector
 from faced.utils import annotate_image

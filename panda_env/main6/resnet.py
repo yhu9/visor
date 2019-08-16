@@ -1,10 +1,5 @@
-"""
-    Author: Pytorch
-
-    resnet.py is the pytorch implementation of resnet which I copied with the slight edition of line 126 which I hardcoded a different channel dimension value instead of 3.
-"""
-
 import torch.nn as nn
+#from .utils import load_state_dict_from_url
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
@@ -121,7 +116,7 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(8, self.inplanes, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(13, self.inplanes, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)

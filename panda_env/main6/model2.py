@@ -1,11 +1,3 @@
-"""
-    Author: Masa Hu
-    Email: huynshen@msu.edu
-
-    model2.py contains our agent code with the neural network model architecture generation.
-"""
-
-#NATIVE LIBRARY IMPORTS
 import itertools
 import math
 import random
@@ -13,7 +5,6 @@ import os
 import sys
 from collections import namedtuple
 
-#OPEN SOURCE IMPORTS
 import cv2
 import numpy as np
 import torch
@@ -22,12 +13,10 @@ import torch.nn.functional as F
 import resnet
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
+from logger import Logger
 from torch.distributions import Categorical
 
-#CUSTOM IMPORTS
-from logger import Logger
-
-##################################################################################################
+##########################################################
 #POSSIBLY ADD THIS LATER TO STABILIZE TRAINING
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward', 'done'))
 class ReplayMemory(object):
@@ -92,7 +81,7 @@ class DDQN(nn.Module):
         super(DDQN,self).__init__()
 
         self.res18 = resnet.resnet18()
-        self.h1 = nn.Linear(1005,256)
+        self.h1 = nn.Linear(1015,256)
 
         self.value = nn.Sequential(
                 nn.BatchNorm1d(256),
@@ -102,7 +91,6 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,1)
                 )
-        #self.val_out = nn.Linear(256,1)
 
         self.action = nn.Sequential(
                 nn.BatchNorm1d(256),
@@ -112,7 +100,6 @@ class DDQN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(256,243)
                 )
-        #self.act_out = nn.Linear(256,243)
 
     def forward(self,state):
         visor,frame = state
@@ -123,6 +110,29 @@ class DDQN(nn.Module):
         a = self.action(x)
         q = v + (a - torch.mean(a))
         return q
+
+class RewardEstimator(nn.Module):
+    def __init__(self):
+        super(RewardEstimator,self).__init__()
+        self.res18 = resnet.resnet18()
+        self.h1 = nn.Linear(1016,256)
+
+        self.reward = nn.Sequential(
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256,1)
+                )
+
+    def forward(self,state,action):
+        visor,frame = state
+        x = self.res18(frame)
+        x = torch.cat((visor,x,action),dim=-1)
+        x = self.h1(x)
+        r = self.reward(x)
+        return r
 
 #DDPG with limited action space
 class DQN(nn.Module):
@@ -152,6 +162,7 @@ class DQN(nn.Module):
 class Model():
     def __init__(self,load=False,mode='DQN'):
 
+        #WEIGHT INITIALIZATION FUNCTION
         def init_weights(m):
             if isinstance(m, nn.Linear) or isinstance(m,nn.Conv2d):
                 torch.nn.init.xavier_uniform_(m.weight.data)
@@ -159,17 +170,18 @@ class Model():
         #DEFINE ALL NETWORK PARAMS
         self.EPISODES = 0
         self.BATCH_SIZE = 32
-        self.GAMMA = 0.999
+        self.GAMMA = 0.60
         self.EPS_START = 0.9
-        self.EPS_END = 0.05
+        self.EPS_END = 0.10
         self.EPS_DECAY = 10000
         self.TARGET_UPDATE = 20
         self.device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.steps = 1
         self.memory = ReplayMemory(10000,device=self.device)
+        self.model_r = RewardEstimator()
 
         print(self.device)
-        #OUR NETWORK
+        #OUR NETWORK. Currently using DDQN
         if mode == 'DQN':
             self.model= DQN()
             self.target_net = DQN()
@@ -177,27 +189,53 @@ class Model():
             self.model= DDQN()
             self.target_net = DDQN()
         self.model.to(self.device)
+        self.model_r.to(self.device)
         self.target_net.to(self.device)
 
-        #LOAD THE MODULES
+        #LOAD THE MODELS
         if load:
             print('MODEL' + load + ' LOADED')
-            self.model.load_state_dict(torch.load(load));
-            self.target_net.load_state_dict(torch.load(load));
+            if self.device == 'cpu':
+                self.model.load_state_dict(torch.load(load,map_location='cpu'));
+                self.target_net.load_state_dict(torch.load(load,map_location='cpu'));
+            else:
+                self.model.load_state_dict(torch.load(load));
+                self.target_net.load_state_dict(torch.load(load));
         else:
             self.model.apply(init_weights)
             self.target_net.apply(init_weights)
 
         #DEFINE OPTIMIZER AND HELPER FUNCTIONS
-        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.0001,betas=(0.0,0.9))
+        self.opt = torch.optim.Adam(itertools.chain(self.model.parameters()),lr=0.0001)
+        self.opt_r = torch.optim.Adam(itertools.chain(self.model_r.parameters()),lr=0.0001)
         self.l2 = torch.nn.MSELoss()
         self.l1 = torch.nn.L1Loss()
 
+    #LEARN THE REWARD FUNCTION
+    def learn_r(self):
+        if len(self.memory) < self.BATCH_SIZE: return 0.0
+        self.model.train()
+
+        s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
+        a = actions[:,0] * 81 + actions[:,1] * 27 + actions[:,2] * 9 + actions[:,1] * 3 + actions[:,0] * 1
+        a = a.unsqueeze(1) / 243
+
+        r = self.model_r(s1,a.float())
+        loss = self.l1(r1,r)
+        print(r1-r)
+
+        self.opt_r.zero_grad()
+        loss.backward()
+        self.opt_r.step()
+
+        return loss.item()
+
+    #OPTIMIZE THE NETWORK BASED ON EXPERIENCE REPLAY
     def optimize(self):
         #don't bother if you don't have enough in memory
         if len(self.memory) < self.BATCH_SIZE: return 0.0
-
         self.model.train()
+
         s1,actions,r1,s2,d = self.memory.sample(self.BATCH_SIZE)
         a = actions[:,0] * 81 + actions[:,1] * 27 + actions[:,2] * 9 + actions[:,1] * 3 + actions[:,0] * 1
         a = a.unsqueeze(1)
@@ -205,20 +243,9 @@ class Model():
         #get old Q values and new Q values for belmont eq
         qvals = self.model(s1)
         qvals = qvals.gather(1,a)
-
-        #q1 = qvals[0].gather(1,actions[:,0].unsqueeze(1))
-        #q2 = qvals[1].gather(1,actions[:,1].unsqueeze(1))
-        #q3 = qvals[2].gather(1,actions[:,2].unsqueeze(1))
-        #state_action_values = torch.cat((q1,q2,q3),-1)
-
         with torch.no_grad():
             qvals_t = self.target_net(s2)
             qvals_t = qvals_t.max(1)[0].unsqueeze(1)
-            #q1_t = qvals_t[0].max(1)[0].unsqueeze(1)
-            #q2_t = qvals_t[1].max(1)[0].unsqueeze(1)
-            #q3_t = qvals_t[2].max(1)[0].unsqueeze(1)
-            #q_target = torch.cat((q1_t,q2_t,q3_t),-1)
-
         expected_state_action_values = (qvals_t * self.GAMMA) * (1-d) + r1
 
         #LOSS IS l2 loss of belmont equation
@@ -244,15 +271,15 @@ class Model():
             a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)
             return a1[0], a2[0],a3[0],a4[0],a5[0]
 
+    #CATEGORICAL ACTION SELECTION WITH DECAY TOWARDS CORRECT ACTION SELECTION
     def select_caction(self,state):
         self.model.eval()
         with torch.no_grad():
             frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
             frame = frame.permute(2,0,1).unsqueeze(0)
             v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
-            #send the state through the DQN and get the index with the highest value for that state
             a = self.model((v,frame))
-            probs = F.softmax(a)
+            probs = F.softmax(a) #10 is the beta value for softmax emphasis on larger values
             m = Categorical(probs)
             action = m.sample()
             idx = action.item()
@@ -270,7 +297,6 @@ class Model():
                 frame = torch.from_numpy(np.ascontiguousarray(state[1])).float().to(self.device)
                 frame = frame.permute(2,0,1).unsqueeze(0)
                 v = torch.Tensor(state[0]).unsqueeze(0).to(self.device)
-                #send the state through the DQN and get the index with the highest value for that state
                 a = self.model((v,frame))
                 idx = a.max(1)[1].item()
                 a1,a2,a3,a4,a5 = np.where(np.arange(243).reshape((3,3,3,3,3)) == idx)

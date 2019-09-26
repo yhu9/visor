@@ -10,11 +10,11 @@ I highly recommend creating a virtual environment and doing the installation on 
 4. pip install --user panda3d==1.10.3
 5. install opencv for python >= 4.1.0. $pip install --user opencv-python
 6. conda install matplotlib
-7. pip install --user dlib
-8. pip install imutils
-9. pip install --ignore-installed --upgrade tensorflow-gpu
-10. pip install scipy
-11. conda install -c 1adrianb face_alignment
+7. conda install -c 1adrianb face_alignment
+8. pip install --user dlib
+9. pip install imutils
+10. pip install --ignore-installed --upgrade tensorflow-gpu
+11. pip install scipy
 
 ###########################################################################################
 ###########################################################################################

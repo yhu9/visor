@@ -1,16 +1,26 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
 
+    utils.py gives us two classes needed by env.py used for shadow detection and landmark detection some parts like the AI based landmark detection are more robust, but each class has its own ground truth 2D segmentation mask generation according to a preset definition of the 3D environment
+"""
+
+#NATIVE LIBRARY IMPORTS
 import math
 
+#OPEN SOURCE IMPORTS
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import dlib
 from imutils import face_utils
-
+################################################################################################
+################################################################################################
+#SHADOW DETECTION CLASS
 class ShadowDetector():
     def __init__(self): return
 
-
+	#GROUND TRUTH SHADOW EXTRACTION BASED ON COLORING
     def get_shadowgt(self,rgb):
 
         rgb = rgb - 51        #remove ambient light = 20%
@@ -36,6 +46,7 @@ class ShadowDetector():
 
         return mask
 
+#LANDMARK DETECTION CLASS
 class LM_Detector():
     def __init__(self):
         self.fa = cv2.dnn.readNetFromCaffe("../../models/deploy.prototxt.txt","../../models/res10_300x300_ssd_iter_140000.caffemodel")

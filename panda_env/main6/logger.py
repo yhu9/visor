@@ -1,24 +1,15 @@
-"""
-    Author: https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
-
-    logger.py is a tensorboard logging code which is mainly written on the above github page. 
-"""
-
-#NATIVE LIBRARY IMPORTS
+# Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
 import os
 
-#OPEN SOURCE IMPORTS
 import tensorflow as tf
 import numpy as np
 import scipy.misc
-
 try:
     from StringIO import StringIO  # Python 2.7
 except ImportError:
     from io import BytesIO         # Python 3.x
 
-####################################################################################################
-####################################################################################################
+
 class Logger(object):
 
     def __init__(self, log_dir):

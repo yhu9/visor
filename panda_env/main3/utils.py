@@ -1,18 +1,26 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
 
+    utils.py gives us two classes needed by env.py used for shadow detection and landmark detection some parts like the AI based landmark detection are more robust, but each class has its own ground truth 2D segmentation mask generation according to a preset definition of the 3D environment
+"""
+
+#NATIVE LIBRARY IMPORTS
 import math
+
+#OPEN SOURCE IMPORTS
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import dlib
 from imutils import face_utils
-
-
+################################################################################################
+################################################################################################
 #SHADOW DETECTION CLASS
 class ShadowDetector():
     def __init__(self): return
 
-
-    #GIVEN THE VIRTUAL ENVIRONMENT IMAGE WITH 20% AMBIENT LIGHT
-    #REMOVING THE AMBIENT LIGHT WOULD CAUSE ANY AREAS WITHIN SHADOWS TO BE BLACK
+	#GROUND TRUTH SHADOW EXTRACTION BASED ON COLORING
     def get_shadowgt(self,rgb):
 
         rgb = rgb - 51        #remove ambient light = 20%
@@ -21,7 +29,9 @@ class ShadowDetector():
         bmask = rgb[:,:,0] == 0
 
         shadow_mask = rmask & gmask & bmask
+
         return shadow_mask
+
 
     #single image shadow detector using ycrcb color space
     def get_shadow(self,rgb):
@@ -36,7 +46,7 @@ class ShadowDetector():
 
         return mask
 
-#FACIAL LANDMARK DETECTION CLASS
+#LANDMARK DETECTION CLASS
 class LM_Detector():
     def __init__(self):
         self.fa = cv2.dnn.readNetFromCaffe("../../models/deploy.prototxt.txt","../../models/res10_300x300_ssd_iter_140000.caffemodel")
@@ -59,7 +69,11 @@ class LM_Detector():
                 rightmost = box[0]
                 box = box.astype("int")
                 bbox = dlib.rectangle(box[0],box[1],box[2],box[3])
-
+                #(startX,startY,endX,endY) = box.astype("int")
+                #rgb = cv2.rectangle(rgb,(startX,startY),(endX,endY),(0,0,255),2)
+        #cv2.imshow("image",rgb)
+        #cv2.waitKey(0)
+        #quit()
         if rightmost == -1: return rgb,0
         print(bbox.top(),bbox.bottom(),bbox.left(),bbox.right())
         lm = face_utils.shape_to_np(self.predictor5(rgb,bbox))
@@ -68,7 +82,7 @@ class LM_Detector():
         rgb = rgb[bbox.top():bbox.bottom(),bbox.left():bbox.right()]
         return rgb,lm
 
-    #GET GROUND TRUTH EYE LOCATIONS BY DETERMINING RGB TEXTURES THAT ARE RED
+    #GET EYE GT
     def get_eyesGT(self,rgb):
         img = rgb - 51        #remove ambient light = 20%
         rmask = img[:,:,2] > 0
@@ -78,8 +92,7 @@ class LM_Detector():
 
         return eye_mask
 
-    #GET THE EYE REGION GIVEN THE RGB IMAGE AND THE DETECTED LANDMARKS
-    #EYE REGIONIS RETURNED AS A BINARY MASK THAT IS THE SAME WxH AS THE RGB IMAGE
+    #GET THE EYE REGION
     def get_eyes(self,rgb,lm,pad=40):
         vec1 = lm[0] - lm[2]
         x = -vec1[1] / vec1[0]
@@ -98,5 +111,34 @@ class LM_Detector():
         cv2.fillConvexPoly(eye_mask,box,(1))
 
         return eye_mask == 1
+
+    #FOR VISUALIZATION
+    def view_lm(self,rgb,lm):
+        for x,y in lm:
+            rgb = cv2.circle(rgb,(x,y),2,[255,0,0],2)
+
+        vec1 = lm[0] - lm[2]
+        #ax + by = 0 let a,b = (1,1)
+        x = -vec1[1] / vec1[0]
+        y = vec1[0] * x / -vec1[1]
+        vec2 = np.array([x,y])
+        angle = -math.atan(vec2[1] / vec2[0])
+        w = np.linalg.norm(vec1)
+        h = 30
+        cx = (lm[0][0] + lm[2][0]) // 2
+        cy = (lm[0][1] + lm[2][1]) // 2
+        rot_rect = ((cx,cy),(w+30,h),angle)
+        box = cv2.boxPoints(rot_rect)
+        box = np.int0(box)
+
+        cv2.fillConvexPoly(rgb,box,(255,255,255))
+        cv2.drawContours(rgb,[box],0,(0,0,255),2)
+        cv2.imshow('rgb',rgb)
+        cv2.waitKey(0)
+        quit()
+
+    def draw(self,rgb,shadow,lm):
+        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
+        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
 
 

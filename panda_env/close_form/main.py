@@ -1,12 +1,20 @@
 #!/usr/bin/env python
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
+
+    env.py is the environment definition of the RL agent. This module contains several functions mimicking the functionalities mentioned by openai gym, in case we would like to one day test open source deep RL algorithms on this custom environment. However, this module can also be run as main and allows for an interactive session with the user on the 3D environment. If the assets are not in the correct directory this module will not work correctly.
+"""
+
+#NATIVE LIBRARY IMPORTS
 import time
 import os
-import numpy as np
 from collections import deque
 import argparse
 from itertools import count
-import gc
 
+#OPEN SOURCE IMPORTS
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 

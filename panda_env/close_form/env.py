@@ -1,26 +1,31 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
 
+    env.py is the environment definition of the RL agent. This module contains several functions mimicking the functionalities mentioned by openai gym, in case we would like to one day test open source deep RL algorithms on this custom environment. However, this module can also be run as main and allows for an interactive session with the user on the 3D environment. If the assets are not in the correct directory this module will not work correctly.
+"""
+
+#NATIVE LIBRARY IMPORTS
 import random
 from math import pi, sin, cos,sqrt
 import numpy as np
 from collections import deque
 
-#CUSTOM MODULES
-from utils import ShadowDetector
-from utils import LM_Detector
-
-#OTHER LIBRARIES
+#OPEN SOURCE LIBRARY IMPORTS
 import cv2
-
 #PANDA3D
 from panda3d.core import *
 from direct.task import Task
 import direct.directbase.DirectStart
-#from direct.interval.IntervalGlobal import *
 from direct.gui.DirectGui import OnscreenText
 from direct.showbase.DirectObject import DirectObject
 from direct.actor.Actor import Actor
 from direct.filter.FilterManager import FilterManager
 from panda3d.direct import throw_new_frame
+
+#CUSTOM MODULES
+from utils import ShadowDetector
+from utils import LM_Detector
 
 ################################################################################################
 ################################################################################################

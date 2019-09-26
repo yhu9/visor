@@ -1,15 +1,27 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
+
+    tools3.py is a simple overview of the different techniques we investigated on 2d/3d landmark localization, face detection,
+    and shadow detection. No AI solution was investigated on shadow detection as all state of the art approaches involving AI
+    required GPU capabilities to run efficiently, while still performing sub-optimally.
+
+    you can run tools3.py as main to see a small demo
+"""
+
+#Native library imports
 import sys
 import os
 import time
 
+#OPEN SOURCE IMPORTS
 import cv2
 import matplotlib.pyplot as plt
 import imageio
 import numpy as np
 from imutils import face_utils
-import face_alignment
-
 import dlib
+import face_alignment
 from faced import FaceDetector
 from faced.utils import annotate_image
 
@@ -38,9 +50,6 @@ class ShadowDetector():
     def get_shadow2(self,rgb):
         mog_mask = self.mog.apply(rgb)
         return mog_mask == 127
-
-        #plt.imshow(mog_mask)
-        #plt.show()
 
 #################################################################################################
 #################################################################################################

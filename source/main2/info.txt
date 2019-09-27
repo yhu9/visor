@@ -1,1 +1,546 @@
-deprecated!
+EYE = (eye_region AND shadow_region) / eye_region
+IOU = (eye_region AND shadow_region) / (eye_region OR shadow_region)
+width = width of the activated visor mask
+height = height of the activated visor mask
+eye_region = area of the eye_region
+###############################################################################
+
+exp1.0:
+
+	threshold = EYE + IOU
+	reward = 1.0 if threshold > 1.0 else -0.2
+
+(notes)
+Observed over shadowing of the face likely due to the lack of negative reinforcement and an unconstrained positive reward which does not correctly account for overshadowing.
+###############################################################################
+
+exp1.1:
+
+	threshold = EYE * (EYE + IOU)
+	A = width * height / 525	where 525 = 15*35 and width and height is activated visor mask
+	reward = {1.0  | if threshold > 1.0 else -0.2}
+
+(notes)
+Q values are somewhat divergent. Likely due to the lack of an end state, and infinite increase in possible future reward. Still noticing overshadowing, but the network seems to care more for having too large of a mask. Divergence was due to the lack of an endstate, and accumulating future rewards according to the belmont equation.
+###############################################################################
+
+exp1.2:
+
+	threshold = EYE * (EYE + IOU)
+	A = width * height / (eye_region)	#assume parrallel light and visor parrallel to face
+	reward = {threshold - A | if threshold > 1.3
+			-0.2	| else
+
+(note)
+added end state if reward is positive.
+Never received positive reward.
+Need to add visualization of reward accumulation, and generate shadow and eye masks at each inference.
+Consider allowing for multi valued action space for quicker solution searching
+Q values no longer diverge due to the addition of an end state.
+Possible bug when all states within memory are end states.
+###############################################################################
+
+exp1.3:
+
+	threshold = EYE + IOU
+	A = width * height / (eye_region)
+	reward = {threshold - A | if threshold > 1.2
+			-0.2	| else
+
+(note)
+Reward visualization reveals over estimation of the shadow mask still.
+IOU is around 0.2-0.3 whereas EYE = 0.9 - 1.0
+Need to add animation and/or random light initialization in order to prove the
+effectiveness of the trained agent. It seems not possible to increase IOU without finer control of the shadow mask over the face. Due to a bug, only 194 episodes were performed during training.
+#####################################################################################
+
+exp 1.4:
+
+	threshold = EYE + IOU
+	A = width * height / (eye_region)
+	reward = {threshold - A | if threshold > 1.2
+			-0.2	| else
+
+
+
+(note)
+Found a bug where there are some rendering discontinuities.
+Changed the network to produce multiple control actions with each action containing a no action. This increases action space to 5*5*3 = 75 possible actions.
+Changed discrete movement values to 1 pixel.
+
+Agent performed exceptionally well. Added reward visualization as well as tensorboard visualization of scalar values. Consider making the environment harder with head motion, car motion, random state initialization.
+####################################################################################
+
+exp1.5:
+
+	threshold = EYE + IOU
+	A = width * height / (eye_region)
+	reward = {threshold - A | if threshold > 1.2
+			-0.2	| else
+
+(added)
+1. 200 random head pose initialization
+2. smaller visor mask initialization
+3. random light position initialization bounded to 3pix^3
+4. testing module
+
+(observed)
+1. network was able to solve the environment despite large head motion
+2. reward maps are sometimes incorrect due to head pose
+3. loss function is starting to lose stability due to harder environment
+4. Certain states are still unsolvable
+
+100 episodes: success_rate: 0.83000 | failure_rate: 0.17000 | avg_time: 9.46000 | avg_reward: -0.89327
+
+
+(conclusion)
+1. Consider using GPU with a more sophisticated network to improve loss stability and faster learning
+2. It may be better to give the network more state based information such as current visor position, shadow mask, eye mask as the network would need this information to solve the environment.
+
+	environment state parameters to think about:
+		object positions
+		light positions
+		visor params
+		object movement (velocity = speed * direction)
+		light movement (velocity = speed * direction)
+
+####################################################################################
+
+exp1.51:
+
+	threshold = EYE + IOU
+	A = width * height / (eye_region)
+	reward = threshold
+
+(added)
+1. removed negative reward
+2. always continuous
+
+(observed)
+1. seems to not want to reach the goal state
+2. accumulates reward by only partially covering the eyes or over estimation of the eyes
+
+(conclusion)
+In order to make a continuous reward work properly, one would need to make it beneficial to not reach the end state. Therefore, an optimal policy must exist which goes on forever. Consider going back to discrete negative rewards
+
+####################################################################################
+
+exp1.6:
+
+	threshold = EYE + IOU
+	A = width * height / (eye_region)
+	reward = {threshold 	| if threshold > 1.2
+			-0.1	| else
+
+(added)
+1. Ground truth eye detection
+2. Ground truth shadow detection
+
+(observed)
+1. Shadows within the car decreases IOU and can easily be fixed
+2. Some overestimation still happens
+3. Training requires significant number of episodes. 5000 to be safe, and likely needs more. A good stopping condition is necessary with a GPU for quicker evaluation
+4. Results can likely be easily improved simply by increasing number of training episodes, batchsize, memory
+
+(conclusion)
+1. higher computing space will likely improve all necessary requirements (speed, acc, reward)
+2. color the car object to remove background shadows
+3. some shadows cannot be removed (self occlusion to the light source)
+4. Next significant difficulty will come with adding a control for stopping and starting the agent
+
+
+####################################################################################
+
+exp1.7:
+
+	reward = IOU
+
+(added)
+1. dense continuous reward with end state always at 10 time steps
+2. ground truth shadow via coloring
+3. ground truth eye region via coloring
+4. continuous action space by using DDPG
+5. refactored code base for easier usage with openai gym
+6. added visor parameters into state space
+
+(observed)
+1. ground truth coloring removes useful image features of the face
+2. continuous action space allows for quick environment solutions
+3. ddpg is slower than DQN
+4. shadow detection IOU is still very low due to decreased eye region
+5. It almost seems like the agent found it optimal to always output a visor mask which does okay on average
+6. possible bug with the random exploration
+
+(conclusion)
+1. do ground truth segmentation on a different buffer from the original image
+2. change dense reward to just IOU
+3. Try increase precision of visor shadow param
+4. decrease the learning rate find subtle changes
+
+(results)
+Episode 100, Average Score: 1.17, Max: 2.17, Min: 0.00, Solved: 0.00, AvgStps: 0.00
+
+
+####################################################################################
+
+exp 1.8
+
+
+	reward = IOU
+
+(results)
+Episode 100, Average Score: -32.64, Max: 52.06, Min: -100.00, Solved: 0.63, AvgStps: 3.02
+
+
+(added)
+1. Better ground truth shadow by eliminating background
+2. More modularized code base by separating environment from training code
+3. scaled reward by 10x
+5. separated textured image and segmentation masks. Used both during training state is now the textured image and reward is
+calculated using the segmentation masks
+6. adjusted directional light to come more from the front
+7. decreased random sampling decay
+8. added ending for low reward
+
+
+(observed)
+1. Consider some initialization steps to find precise shadow mask associated with just the visor
+2. additional state sequences within the state definition may help with understanding time dependencies
+3. Change network back to discrete action space to remove action rounding (Nanxiang)
+4. Some states exist where the visor cannot every find a good mask
+5. Actor randomly predicts and never stays with a good solution despite finding one
+
+(conclusion)
+1. Actor is randomly making decisions.
+2. Consider removing visor parameters in initial state
+
+exp 1.8.1
+	A = width * height / (eye_region)
+	reward = { IOU * 100 	| if IOU > 0.25
+			-10	| else
+
+
+(added)
+1. added visor parameters as input to the current state
+
+
+#################################################################################
+exp 1.9
+
+	A = width * height / (eye_region)
+	reward = { IOU * 10 	| if IOU > 0.25
+			-1	| else
+
+
+(added)
+1. This is a copy of exp 1.6 except with the additional change of texture + ground truth shadow imagery
+2. reward is scaled up by 10
+3. Did not train for 5000 episodes like before due to time
+
+(observed)
+1. Signficant over estimation occurs without long training duration
+2. Consider increasing reward signal
+3. loss diverges, but solution seems okay?
+
+exp 1.9.1
+	A = width * height / (eye_region)
+	reward = { IOU * 100 	| if IOU > 0.25
+			-1	| else
+
+(added)
+1. scaled positive reward by another factor of 10
+
+(observed)
+1. more quickly learns a good policy
+2. solution diverged
+
+exp 1.9.2
+	threshold = IOU + EYE
+	reward = { threshold 	| if  > 1.20
+			-0.1	| else
+
+(added)
+1. Went back to original loss function and the original network
+2. only thing different is the ground truth texture
+
+(observed)
+1. initial training has good loss updates
+
+(results)
+Episode 100, Average Score: -0.17, Max: 1.22, Min: -1.00, Solved: 0.39, AvgStps: 3.33
+
+(conclusion)
+I must have a bug...
+
+exp 1.9.3
+	threshold = IOU + EYE
+	reward = { threshold 	| if  > 1.20
+			-0.1	| else
+
+(added)
+fixed a bug in the loss function
+
+(results)
+1. Saved model with best average of 20
+2. Saved model with most solved of 100
+
+Episode 199, Average Score: 1.18, Max: 1.27, Min: -2.00, Solved: 0.83, AvgStps: 2.99
+Episode 199, Average Score: 0.87, Max: 1.26, Min: -2.00, Solved: 0.91, AvgStps: 3.00
+Episode 199, Average Score: 0.73, Max: 1.26, Min: -2.00, Solved, 0.93, AvgStps: 3.03
+
+###################################################################
+exp 2.0
+
+	reward = IOU
+	done if IOU = 0.0
+
+(added)
+1. DDQN
+2. discrete action space with all visor params x,y,w,h,angle
+	x = [0,35]
+	y = [0,15]
+	w = [0,35]
+	h = [0,15]
+	angle = {pi * 0.5 / 10 * i | for i = 0 .. 10}
+
+(observed)
+1.Gets stuck in a corner
+
+exp 2.0.1
+
+	threshold = IOU + EYE
+	reward = { threshold 	| if  > 1.20
+			-0.1	| else
+
+###################################################################
+exp 2.1
+
+DDPG
+
+	threshold = IOU + EYE
+	reward = { threshold 	| if  > 1.20
+			-0.1	| else
+
+
+(description)
+go back to the old reward function to make it comparable with exp 1.6
+
+
+Episode 100, Average Score: 0.35, Max: 1.49, Min: -1.00, Solved: 0.50, AvgStps: 3.44
+###################################################################
+
+exp 2.2 threshold 1.0
+exp 2.2 threshold 1.1
+exp 2.2 threshold 1.2
+exp 2.2 threhsold 1.3
+
+Episode 199, Average Score: -0.74, Max: 15.17, Min: -2.00, Solved: 0.76, AvgStps: 4.86
+Episode 199, Average Score: -0.61, Max: 21.32, Min: -2.00, Solved: 0.71, AvgStps: 2.63
+Episode 199, Average Score: 2.39, Max: 7.61, Min: -2.00, Solved: 0.96, AvgStps: 2.88
+Episode 199, Average Score: 5.42, Max: 10.97, Min: -2.00, Solved: 0.89, AvgStps: 2.73
+
+
+#####################################################################
+exp 2.3 threshold = 0.25
+
+hindesight experience replay:
+	R(s | g') = IOU - 1
+	R( s | g) = 1 if IOU > 0.25
+	-1 		else
+
+goal state added with input state with smooth reward IOU - 1
+hexagon overlap fix
+dqn / actor-critic
+
+- Episode 199, Average Score: 2.05, Max: 3.44, Min: 1.00, Solved: 0.99, AvgStps: 3.75
+- actor-critic still fails to converge
+
+###################################################################
+exp 2.4
+
+added visor params to the model input state
+changed hexagon size to 19x9 (w,h)
+added more possible lighting conditions
+
+Episode 6375, Average Score: -0.20, Max: 1.00, Min: -1.00, Time: 0.31, Solv: 0.40
+
+- possible error with new visor setting to have lighting conditions outside of boundaries
+- need control for impossible situations
+- noticed max possible mem with 2 running
+
+exp2.4a
+
+fixed lighting conditions so visor can affect the face
+tried adjusting memory allocation, but still takes up 15gb of memory over a day of training...
+
+Episode 199, Average Score: 0.79, Max: 6.84, Min: 0.00, Solved: 0.44, AvgStps: 2.05
+
+- found another visor location where light settings cause impossible solutions (need to fix)
+- still significantly worse than before? we only changed the lighting condition and visor size
+- perhaps finer visor control is better for the agent since shadow generation from game engine sucks
+
+exp 2.4b
+
+fixed lighting again where light location caused impossible situations
+1. non moving light
+2. moving light
+
+Episode 199, Average Score: 2.59, Max: 9.78, Min: 0.00, Solved: 0.52, AvgStps: 3.09
+Episode 199, Average Score: 2.19, Max: 8.72, Min: 0.00, Solved: 0.70, AvgStps: 3.91
+
+visor tends to stay still and wait for light movement to solve solution.
+
+###########################################################################
+exp 2.5a
+
+DDQN instead of DQN
+
+supposedly DQN approaches the problem from a dynamic programming perspective. This means the DQN does not generalize state spaces to other situations, and will not be able to find solutions in unseen states. DDQN separates value and advantage so the value of a state is decoupled from the state action q value
+
+Episode 199, Average Score: 3.16, Max: 10.69, Min: 0.00, Solved: 0.73, AvgStps: 1.85
+
+exp2.5b
+
+added minimum bound on visor width and height
+
+Episode 199, Average Score: 3.43, Max: 11.90, Min: 0.00, Solved: 0.88, AvgStps: 2.45
+
+perhaps I should make the visor problem more realistic? Currently using random light position at same visor start. Real situation would be smooth light position with smooth visor start, where beginning of light and visor would be where it ended last.
+
+exp2.5c
+
+use last position of visor for input to next state even after finding a solution
+bugfix. was not using DDQN and was still using DQN
+
+pisode 199, Average Score: 0.68, Max: 3.69, Min: 0.00, Solved: 0.26, AvgStps: 3.73
+
+
+exp2.5d
+
+use last position of visor for input to next state even after finding a solution
+change network to output q value for 75 outputs instead of q value for 5 + 5 + 3 outputs.
+
+Episode 199, Average Score: 0.29, Max: 3.79, Min: 0.00, Solved: 0.42, AvgStps: 3.26
+Episode 199, Average Score: 0.29, Max: 3.79, Min: 0.00, Solved: 0.42, AvgStps: 3.26
+
+using last position of visor for input to next makes it quite a bit harder?
+
+exp2.5e
+
+change visor to start with all on
+changed reward function to be continuous
+reset to all on
+removed hindesight experience replay
+
+0% accuracy...
+
+exp2.5f
+
+use last visor in previous state for current state
+reset to all visor on only if < 80% of eye region is covered
+
+exp2.5g
+
+add minbound on visor
+reset to all visor on only if < 50% of eye region is covered
+
+exp2.5h
+normalize visor parameter when feeding it into the network
+change reward to -1 if end state and goal not found
+change reward to -0.2 if not end state and goal not found
+
+#############################################################
+exp2.5i
+change reward to sparser reward
+0 if not end state
+-1 if IOU < 0.25 and end state
+IOU + 1 if IOU >= 0.25 and end state
+
+solved: 73.3% 	| steps: 2.87
+
+exp2.5i_withher
+
+
+exp2.5i_without her
+
+
+exp2.5i_with her and higher resolution and extra channel on intersection
+
+
+###########################################################################
+
+exp 2.6
+
+Rerun exp2.3 with new environment settings. i.e (visor width height / more dynamic lighting)
+
+visor width - changed from 35x15 to 19x9
+lighting - light source can start anywhere as long as a solution is possible
+
+Episode 199, Average Score: 1.48, Max: 11.96, Min: 0.00, Solved: 0.79, AvgStps: 2.63
+
+exp 2.6b
+
+change visor to start with all on
+
+Episode 199, Average Score: 3.20, Max: 9.05, Min: 0.28, Solved: 0.86, AvgStps: 4.88
+
+
+############################################################################
+
+exp 2.7.0
+
+just learn the immediate IOU of state action pairs
+reward = IOU
+
+optimize on
+
+loss = Q(s,a) - R(s')
+
+Need exploration term. Currently 10,000 iterations. Perhaps a stochastic action selection based on immediate reward of each state action pair.
+
+Episode 199, Average Score: 2.91, Max: 4.94, Min: 0.00, Solved: 0.19, AvgStps: 2.38
+
+
+exp2.7.1
+
+add categorical probability selection based on learned Q(s,a) values
+
+exp2.7.2
+
+Since we take softmax of the categorical sample probabilities, and the network is directly estimating R(s,a) I chose to set failure states as -1 and success states as 1 + lambda * IOU and neutral states as IOU.
+
+R(s,a) = -1			if s' is failure state
+R(s,a) = IOU			if s' is neutral state
+R(s,a) = 1 + lambda * IOU 	if s' is success state
+
+lambda is scale factor with which to make actions leading to success states more likely. Unfortunately this is a hyperparameter which determines the exploration exploitation tradeoff.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

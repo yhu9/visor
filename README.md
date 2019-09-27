@@ -2,7 +2,14 @@
 ###########################################################################################
 # Installation Instructions
 
-I highly recommend creating a virtual environment and doing the installation on the anaconda virtual environment since that is what I did. That being said, I glued everything together using both pip and anaconda so make sure in intialize the conda virtual environment with the correct python version. Any other installation methods will have to be glued together by yourself.
+I highly recommend creating a virtual environment and doing the installation on the anaconda virtual environment since that is what I did. That being said, I glued everything together using both pip and anaconda so make sure in intialize the conda virtual environment with the correct python version. Any other installation methods will have to be glued together by yourself. I recommend two ways of creating the conda environment.
+
+### Method 1
+
+create directly from the .yml file provided
+
+        conda env create -f visor_env.yml
+
 
 1. Install Anaconda and pip
 2. conda creeate --name visor python=3.5
@@ -15,6 +22,10 @@ I highly recommend creating a virtual environment and doing the installation on 
 9. pip install imutils
 10. pip install --ignore-installed --upgrade tensorflow-gpu
 11. pip install scipy
+
+###########################################################################################
+###########################################################################################
+
 
 ###########################################################################################
 ###########################################################################################

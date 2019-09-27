@@ -10,6 +10,9 @@ create directly from the .yml file provided
 
         conda env create -f visor_env.yml
 
+### Method 2
+
+Follow the sequence of installation commands from terminal within your conda environment.
 
 1. Install Anaconda and pip
 2. conda creeate --name visor python=3.5
@@ -22,10 +25,6 @@ create directly from the .yml file provided
 9. pip install imutils
 10. pip install --ignore-installed --upgrade tensorflow-gpu
 11. pip install scipy
-
-###########################################################################################
-###########################################################################################
-
 
 ###########################################################################################
 ###########################################################################################

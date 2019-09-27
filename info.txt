@@ -15,7 +15,7 @@ Observed over shadowing of the face likely due to the lack of negative reinforce
 ###############################################################################
 
 exp1.1:
-	
+
 	threshold = EYE * (EYE + IOU)
 	A = width * height / 525	where 525 = 15*35 and width and height is activated visor mask
 	reward = {1.0  | if threshold > 1.0 else -0.2}
@@ -28,7 +28,7 @@ exp1.2:
 
 	threshold = EYE * (EYE + IOU)
 	A = width * height / (eye_region)	#assume parrallel light and visor parrallel to face
-	reward = {threshold - A | if threshold > 1.3 
+	reward = {threshold - A | if threshold > 1.3
 			-0.2	| else
 
 (note)
@@ -90,7 +90,7 @@ exp1.5:
 3. loss function is starting to lose stability due to harder environment
 4. Certain states are still unsolvable
 
-100 episodes: success_rate: 0.83000 | failure_rate: 0.17000 | avg_time: 9.46000 | avg_reward: -0.89327 
+100 episodes: success_rate: 0.83000 | failure_rate: 0.17000 | avg_time: 9.46000 | avg_reward: -0.89327
 
 
 (conclusion)
@@ -191,12 +191,12 @@ exp 1.8
 (results)
 Episode 100, Average Score: -32.64, Max: 52.06, Min: -100.00, Solved: 0.63, AvgStps: 3.02
 
-	
+
 (added)
 1. Better ground truth shadow by eliminating background
 2. More modularized code base by separating environment from training code
 3. scaled reward by 10x
-5. separated textured image and segmentation masks. Used both during training state is now the textured image and reward is 
+5. separated textured image and segmentation masks. Used both during training state is now the textured image and reward is
 calculated using the segmentation masks
 6. adjusted directional light to come more from the front
 7. decreased random sampling decay
@@ -211,7 +211,7 @@ calculated using the segmentation masks
 5. Actor randomly predicts and never stays with a good solution despite finding one
 
 (conclusion)
-1. Actor is randomly making decisions. 
+1. Actor is randomly making decisions.
 2. Consider removing visor parameters in initial state
 
 exp 1.8.1
@@ -235,21 +235,21 @@ exp 1.9
 (added)
 1. This is a copy of exp 1.6 except with the additional change of texture + ground truth shadow imagery
 2. reward is scaled up by 10
-3. Did not train for 5000 episodes like before due to time 
+3. Did not train for 5000 episodes like before due to time
 
 (observed)
 1. Signficant over estimation occurs without long training duration
-2. Consider increasing reward signal 
+2. Consider increasing reward signal
 3. loss diverges, but solution seems okay?
 
 exp 1.9.1
 	A = width * height / (eye_region)
 	reward = { IOU * 100 	| if IOU > 0.25
 			-1	| else
-	
+
 (added)
 1. scaled positive reward by another factor of 10
-	
+
 (observed)
 1. more quickly learns a good policy
 2. solution diverged
@@ -258,11 +258,11 @@ exp 1.9.2
 	threshold = IOU + EYE
 	reward = { threshold 	| if  > 1.20
 			-0.1	| else
-	
+
 (added)
 1. Went back to original loss function and the original network
 2. only thing different is the ground truth texture
-	
+
 (observed)
 1. initial training has good loss updates
 
@@ -292,7 +292,7 @@ Episode 199, Average Score: 0.73, Max: 1.26, Min: -2.00, Solved, 0.93, AvgStps: 
 exp 2.0
 
 	reward = IOU
-	done if IOU = 0.0	
+	done if IOU = 0.0
 
 (added)
 1. DDQN
@@ -343,7 +343,7 @@ Episode 199, Average Score: 5.42, Max: 10.97, Min: -2.00, Solved: 0.89, AvgStps:
 #####################################################################
 exp 2.3 threshold = 0.25
 
-hindesight experience replay: 
+hindesight experience replay:
 	R(s | g') = IOU - 1
 	R( s | g) = 1 if IOU > 0.25
 	-1 		else
@@ -430,7 +430,7 @@ exp2.5e
 change visor to start with all on
 changed reward function to be continuous
 reset to all on
-removed hindesight experience replay 
+removed hindesight experience replay
 
 0% accuracy...
 
@@ -456,7 +456,7 @@ change reward to sparser reward
 -1 if IOU < 0.25 and end state
 IOU + 1 if IOU >= 0.25 and end state
 
-solved: 73.3% 	| steps: 2.87 
+solved: 73.3% 	| steps: 2.87
 
 exp2.5i_withher
 
@@ -492,11 +492,11 @@ exp 2.7.0
 just learn the immediate IOU of state action pairs
 reward = IOU
 
-optimize on 
+optimize on
 
 loss = Q(s,a) - R(s')
 
-Need exploration term. Currently 10,000 iterations. Perhaps a stochastic action selection based on immediate reward of each state action pair. 
+Need exploration term. Currently 10,000 iterations. Perhaps a stochastic action selection based on immediate reward of each state action pair.
 
 Episode 199, Average Score: 2.91, Max: 4.94, Min: 0.00, Solved: 0.19, AvgStps: 2.38
 
@@ -516,7 +516,7 @@ R(s,a) = 1 + lambda * IOU 	if s' is success state
 lambda is scale factor with which to make actions leading to success states more likely. Unfortunately this is a hyperparameter which determines the exploration exploitation tradeoff.
 
 
- 
+
 
 
 

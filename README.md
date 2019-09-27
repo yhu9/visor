@@ -40,3 +40,6 @@ The best open source face detection algorithm I found as of 8-13-2019 was from o
 | Title | Link | sec/frame | eyeballed performance | Description |
 | ----- | ---- | --------- | --------------------- | ----------- |
 | YCbCr Color Removal | https://github.com/mykhailomostipan/shadow-removal/ | 0.0003s/frame | Low | Traditional method analyzing the luminescent color space |
+
+###########################################################################################
+###########################################################################################

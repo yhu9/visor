@@ -1,4 +1,4 @@
-source/assets
+**/assets/*
 archive/
 face_examples
 face_report.odt

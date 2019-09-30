@@ -25,6 +25,7 @@ Follow the sequence of installation commands from terminal within your conda env
 9. pip install imutils
 10. pip install --ignore-installed --upgrade tensorflow-gpu
 11. pip install scipy
+12. pip install git+https://github.com/iitzco/faced.git
 
 ###########################################################################################
 ###########################################################################################

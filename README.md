@@ -27,7 +27,7 @@ Follow the sequence of installation commands from terminal within your conda env
 11. pip install scipy
 12. pip install git+https://github.com/iitzco/faced.git
 
-### Aditional Downloads
+### Aditional Instructions
 
 1. Download assets from the google drive and place within this directory.
 2. Download models from the google drive and place within this directory.

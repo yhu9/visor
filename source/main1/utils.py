@@ -1,27 +1,37 @@
+"""
+    Author: Masa Hu
+    Email: huynshen@msu.edu
 
-import math
+    tools3.py is a simple overview of the different techniques we investigated on 2d/3d landmark localization, face detection,
+    and shadow detection. No AI solution was investigated on shadow detection as all state of the art approaches involving AI
+    required GPU capabilities to run efficiently, while still performing sub-optimally.
 
+    you can run tools3.py as main to see a small demo
+"""
+
+#Native library imports
+import sys
+import os
+import time
+
+#OPEN SOURCE IMPORTS
 import cv2
 import matplotlib.pyplot as plt
+import imageio
 import numpy as np
-import dlib
 from imutils import face_utils
+import dlib
+import face_alignment
+from faced import FaceDetector
+from faced.utils import annotate_image
 
+#################################################################################################
+#################################################################################################
+#################################################################################################
+#SHADOW DETECTION CLASS
 class ShadowDetector():
-    def __init__(self): return
-
-
-    def get_shadowgt(self,rgb):
-
-        rgb = rgb - 51        #remove ambient light = 20%
-        rmask = rgb[:,:,2] == 0
-        gmask = rgb[:,:,1] == 0
-        bmask = rgb[:,:,0] == 0
-
-        shadow_mask = rmask & gmask & bmask
-
-        return shadow_mask
-
+    def __init__(self):
+        self.mog = cv2.createBackgroundSubtractorMOG2(varThreshold=500)
 
     #single image shadow detector using ycrcb color space
     def get_shadow(self,rgb):
@@ -30,26 +40,37 @@ class ShadowDetector():
         ycrcb = cv2.cvtColor(rgb,cv2.COLOR_RGB2YCrCb)   #cvt color space to ycrcb
         ycrcb = cv2.GaussianBlur(ycrcb,(5,5),3)         #blur the image
         y_mean = np.mean(ycrcb[illum_mask][:,0])        #grab the mean
-        y_std = np.std(ycrcb[illum_mask][:,0])         #grab the std
+        #y_std = np.std(ycrcb[illum_mask][:,0])         #grab the std
         mask = ycrcb[:,:,0] < y_mean                    #ycrcb[:,:,0] < y_mean - y_std / a
         mask = mask * illum_mask                        #remove background
 
         return mask
 
-class LM_Detector():
+    #video shadow detector using background subtraction
+    def get_shadow2(self,rgb):
+        mog_mask = self.mog.apply(rgb)
+        return mog_mask == 127
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+#FACE DETECTION CLASS
+class FADetector():
     def __init__(self):
-        self.fa = cv2.dnn.readNetFromCaffe("../../models/deploy.prototxt.txt","../../models/res10_300x300_ssd_iter_140000.caffemodel")
-        self.predictor5 = dlib.shape_predictor("../../models/shape_predictor5.dat")
-        self.thresh = 0.4
+        self.fa = FaceDetector()
+        self.fa2 = dlib.get_frontal_face_detector()
+        self.fa3 = cv2.dnn.readNetFromCaffe("./models/deploy.prototxt.txt","./models/res10_300x300_ssd_iter_140000.caffemodel")
+        self.fa4 = dlib.cnn_face_detection_model_v1("./models/mmod_human_face_detector.dat")
+        self.thresh = 0.5
 
     #DLIB SIMPLE LANDMARK DETECTION + CPU YOLO FACE DETECTION
-    def get_lm(self,rgb,pad=20):
+    def cv2dnn_facedetection(self,rgb,pad=20):
         h,w = rgb.shape[:2]
         blob = cv2.dnn.blobFromImage(cv2.resize(rgb,(300,300)),1.0,(300,300),(103.93,116.77,123.68))
-        self.fa.setInput(blob)
-        detections = self.fa.forward()
+        self.fa3.setInput(blob)
+        detections = self.fa3.forward()
 
-        #get driver bounding box based on rightmost
+        #get driver bounding box based on rightmost position
         rightmost = -1
         for i in range(0,detections.shape[2]):
             confidence = detections[0,0,i,2]
@@ -58,76 +79,213 @@ class LM_Detector():
                 rightmost = box[0]
                 box = box.astype("int")
                 bbox = dlib.rectangle(box[0],box[1],box[2],box[3])
-                #(startX,startY,endX,endY) = box.astype("int")
-                #rgb = cv2.rectangle(rgb,(startX,startY),(endX,endY),(0,0,255),2)
-        #cv2.imshow("image",rgb)
-        #cv2.waitKey(0)
-        #quit()
-        if rightmost == -1: return rgb,0
-        print(bbox.top(),bbox.bottom(),bbox.left(),bbox.right())
-        lm = face_utils.shape_to_np(self.predictor5(rgb,bbox))
-        lm[:,0] = lm[:,0] - bbox.left()
-        lm[:,1] = lm[:,1] - bbox.top()
-        rgb = rgb[bbox.top():bbox.bottom(),bbox.left():bbox.right()]
-        return rgb,lm
+        if rightmost == -1: return
 
-    #GET EYE GT
-    def get_eyesGT(self,rgb):
-        img = rgb - 51        #remove ambient light = 20%
-        rmask = img[:,:,2] > 0
-        gmask = img[:,:,1] == 0
-        bmask = img[:,:,0] == 0
-        eye_mask = rmask & gmask & bmask
+        return rgb[bbox.top():bbox.bottom(),bbox.left():bbox.right()]
 
-        return eye_mask
+    #YOLO FACE DETECTION FROM https://github.com/iitzco/faced
+    def yolo_facedetection(self,rgb):
+        bbox = self.fa.predict(rgb,self.thresh)
+        box = bbox[0]
+        l = box[1] - box[2] // 2
+        t = box[0] - box[3] // 2
+        r = box[1] + box[2] // 2
+        b = box[0] + box[3] // 2
+        return rgb[t:b,l:r]
 
-    #GET THE EYE REGION
-    def get_eyes(self,rgb,lm,pad=40):
-        vec1 = lm[0] - lm[2]
-        x = -vec1[1] / vec1[0]
-        y = vec1[0] * x / -vec1[1]
-        vec2 = np.array([x,y])
-        angle = -math.atan(vec2[1] / vec2[0])
-        w = np.linalg.norm(vec1)
-        h = 50
-        cx = (lm[0][0] + lm[2][0]) // 2
-        cy = (lm[0][1] + lm[2][1]) // 2
-        rot_rect = ((cx,cy),(w+pad,h),angle)     #PADDED HEIGHT AND WIDTH OF 15PIXELS
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
+    #CNN FACE DETECTION FROM DLIB
+    def dlibcnn_facedetection(self,rgb,save=False):
+        dets = self.fa4(rgb,0)
+        d = dets[0]
+        return rgb[d.rect.top():d.rect.bottom(),d.rect.left():d.rect.right()]
 
-        eye_mask = np.zeros(rgb.shape[:2])
-        cv2.fillConvexPoly(eye_mask,box,(1))
+#################################################################################################
+#################################################################################################
+#################################################################################################
+#LANDMARK DETECTION CLASS
+class LM_Detector():
+    def __init__(self):
+        self.bulat = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D,flip_input=False,device='cpu')
+        self.predictor = dlib.shape_predictor("../../models/shape_predictor.dat")
+        self.predictor5 = dlib.shape_predictor("../../models/shape_predictor5.dat")
+        self.eye_cascade = cv2.CascadeClassifier('../../models/haarcascade_eye.xml')
 
-        return eye_mask == 1
+    #DLIB SIMPLE LANDMARK DETECTION
+    #1. uses naive resnet 10 lm detection
+    def dlibresnet_lmdetector(self,rgb):
+        gray = cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
+        box = dlib.rectangle(0,0,gray.shape[1] - 1,gray.shape[0] - 1)
+        preds = face_utils.shape_to_np(self.predictor(gray,box))
+        return preds
 
-    #FOR VISUALIZATION
-    def view_lm(self,rgb,lm):
-        for x,y in lm:
-            rgb = cv2.circle(rgb,(x,y),2,[255,0,0],2)
+    #DLIB 5 point LANDMARK DETECTION + CPU YOLO FACE DETECTION
+    def dlib5pt_lmdetector(self,rgb):
+        box = dlib.rectangle(0,0,rgb.shape[1] - 1,rgb.shape[0] - 1)
+        preds = face_utils.shape_to_np(self.predictor5(rgb,box))
+        return preds
 
-        vec1 = lm[0] - lm[2]
-        #ax + by = 0 let a,b = (1,1)
-        x = -vec1[1] / vec1[0]
-        y = vec1[0] * x / -vec1[1]
-        vec2 = np.array([x,y])
-        angle = -math.atan(vec2[1] / vec2[0])
-        w = np.linalg.norm(vec1)
-        h = 30
-        cx = (lm[0][0] + lm[2][0]) // 2
-        cy = (lm[0][1] + lm[2][1]) // 2
-        rot_rect = ((cx,cy),(w+30,h),angle)
-        box = cv2.boxPoints(rot_rect)
-        box = np.int0(box)
+    #CV2 HAAR CASCADE EYE DETECTOR (the popular one)
+    def cv2haarcascade_lmdetector(self, rgb):
+        gray = cv2.cvtColor(rgb,cv2.COLOR_BGR2GRAY)
+        eyes = self.eye_cascade.detectMultiScale(gray)
+        return eyes
 
-        cv2.fillConvexPoly(rgb,box,(255,255,255))
-        cv2.drawContours(rgb,[box],0,(0,0,255),2)
-        cv2.imshow('rgb',rgb)
-        cv2.waitKey(0)
-        quit()
+    #ADRIAN BULAT LANDMARK DETECTION
+    def bulat_lmdetector(self,rgb):
+        preds = self.bulat.get_landmarks(rgb)
+        return preds[0]
 
-    def draw(self,rgb,shadow,lm):
-        IOU = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(np.logical_or(eye_mask,shadow))
-        EYE = np.sum(np.logical_and(eye_mask,shadow)) / np.sum(eye_mask)
+    #HELPER FUNCTION TO VISUALIZE LANDMARK PREDICTIONS ON RGB IMAGE
+    def plot_lm(self,rgb,lm):
+        if lm.shape[1] == 4:
+            for x,y,w,h in lm:
+                cv2.circle(rgb,(x+w//2,y+h//2),3,(255,0,0),-1)
+        elif lm.shape[1] == 2:
+            for x,y in lm:
+                cv2.circle(rgb,(x,y),3,(255,0,0),-1)
 
+######################################################################################
+######################################################################################
+######################################################################################
+#EVALUATION FUNCTIONS FOR EACH METHOD
+
+#OPENCV'S FACE DETECTION MODULE FROM ITS DNN LIBRARY
+def test_getface(mode=''):
+    DIR_IN = "/home/mhu/DATA/visor/2019-05-07"
+    fa_detector = FADetector()
+    times = []
+    for f in os.listdir(DIR_IN):
+        fin = os.path.join(DIR_IN,f)
+        rgb = plt.imread(fin)
+        cv2.imshow("In Img", cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))
+
+        #PERFORM FACE DETECTION
+        st_time = time.time()
+        if mode == 'cv2dnn':
+            img = fa_detector.cv2dnn_facedetection(rgb)
+        elif mode == 'yolo-cpu':
+            img = fa_detector.yolo_facedetection(rgb)
+        elif mode == 'dlib-cnn':
+            img = fa_detector.dlibcnn_facedetection(rgb)
+        times.append(time.time() - st_time)
+
+        cv2.imshow('Out Img',cv2.cvtColor(img,cv2.COLOR_RGB2BGR))
+        cv2.waitKey(100)
+    print("AVG TIME = " + str(np.mean(times)))
+
+#TEST THE DIFFERENT LANDMARK DETECTORS
+def test_lm(DIR_IN="sample_faces",mode=''):
+    lm = LM_Detector()
+    total = 0.0
+
+    for i,f in enumerate(os.listdir(DIR_IN)):
+        fin = os.path.join(DIR_IN,f)
+        rgb = plt.imread(fin)
+        cv2.imshow("In Img", cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))
+
+        #LANDMARK DETECTION
+        st = time.time()
+        if mode == 'resnet':
+            preds = lm.dlibresnet_lmdetector(rgb)
+        elif mode == 'resnet5pt':
+            preds = lm.dlib5pt_lmdetector(rgb)
+        elif mode == 'haarcascade':
+            preds = lm.cv2haarcascade_lmdetector(rgb)     #MY CURRENT FAVORITE
+        elif mode == 'bulat':
+            preds = lm.bulat_lmdetector(rgb)
+        else: break
+        exec_time = time.time() - st
+        total = total + exec_time
+
+        #PLOT THE PREDICTED LANDMARKS FOR VISUALIZATION
+        if len(preds) > 0:
+            lm.plot_lm(rgb,preds)
+            cv2.imshow('Out Img',cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))
+            cv2.waitKey(100)
+        else: print("NO EYES FOUND")
+        #plt.imsave(os.path.basename(fin) + '.png',rgb,format='png')
+    print("avg time: %.8f" % (total / (i+1)))
+
+#TEST SHADOW DETECTION ON MORE REALISTIC VIDEO
+def test_shadow():
+    #DIR_IN = "/home/mhu/DATA/visor/2019-05-07"
+    DIR_IN = "/home/mhu/DATA/driver_vid/clips/output10.mp4"
+    vid = imageio.get_reader(DIR_IN,'ffmpeg')
+
+    fa_detector = FADetector()
+    detector = ShadowDetector()
+
+    for i,v in enumerate(vid):
+        rgb = fa_detector.cv2dnn_facedetection(v)
+        if not type(rgb) == type(None):
+            mask = detector.get_shadow(rgb)
+            img = np.full(mask.shape,255)
+            img *= mask
+            cv2.imshow('IN IMG',cv2.cvtColor(v,cv2.COLOR_BGR2RGB))
+            cv2.imshow('IN FACE', cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))
+            cv2.imshow('OUT MASK',img.astype(np.uint8))
+            cv2.waitKey(10)
+
+#TEST SHADOW DETECTION
+def test_shadow3():
+    DIR_IN = "./sample_faces"
+    detector = ShadowDetector()
+    fa_detector = FADetector()
+    times = []
+
+    for f in os.listdir(DIR_IN):
+        rgb = plt.imread(os.path.join(DIR_IN,f))
+        cv2.imshow('IN IMG',cv2.cvtColor(rgb,cv2.COLOR_BGR2RGB))
+
+        st_time = time.time()
+        mask = detector.get_shadow(rgb)
+        times.append(time.time() - st_time)
+
+        img = np.full(mask.shape,255)
+        img *= mask
+        cv2.imshow('OUT IMG',img.astype(np.uint8))
+        cv2.waitKey(100)
+    print("AVG TIME = " + str(np.mean(times)))
+
+######################################################################################
+######################################################################################
+######################################################################################
+#testing site via main
+
+if __name__ == '__main__':
+
+    print("\r\r\r")
+    print("   #################################")
+    print("########### Shadow Detection #############")
+    print("   #################################")
+    print("############## Thresholding  On Ideal Data ##############")
+    test_shadow3()
+    print("############## Thresholding on Non-Ideal Data ##############")
+    test_shadow()
+
+    #quit()
+    print("\r\r\r")
+    print("   #################################")
+    print("########### Face Detection #############")
+    print("   #################################")
+    print("############## MODEL CV2 DNN ##############")
+    test_getface(mode='cv2dnn')
+    print("############## MODEL YOLO CPU ##############")
+    test_getface(mode='yolo-cpu')
+    print("############## MODEL DLIB CNN ##############")
+    test_getface(mode='dlib-cnn')
+
+    #quit()
+    print("\r\r\r")
+    print("     #################################")
+    print("########## Landmark Detection ############")
+    print("     #################################")
+    print("############## MODEL RESNET ##############")
+    test_lm(mode='resnet')
+    print("############## MODEL RESNET 5 PT ##############")
+    test_lm(mode='resnet5pt')
+    print("############## MODEL HAAR CASCADE FILTERS ##############")
+    test_lm(mode='haarcascade')
+    print("############## MODEL ADRIAN BULAT ##############")
+    test_lm(mode='bulat')
 

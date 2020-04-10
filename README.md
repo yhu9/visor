@@ -28,7 +28,7 @@ Follow the sequence of installation commands from terminal within your conda env
 12. pip install git+https://github.com/iitzco/faced.git
 
 ### Aditional Instructions
-
+https://drive.google.com/open?id=16raoSZ3J8a9nfcDpw9qWkmhIS2XQ-G55
 1. Download assets from the google drive and place within this directory.
 2. Download models from the google drive and place within this directory.
 
